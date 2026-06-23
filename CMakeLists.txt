@@ -32,6 +32,7 @@ FetchContent_MakeAvailable(benchmark)
 
 add_library(cube
     src/cube/cube.cpp
+    src/cube/notation.cpp
 )
 target_include_directories(cube PUBLIC src)
 target_compile_options(cube PRIVATE -Wall -Wextra -Wpedantic)

@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include "cube/cube.h"
+#include "cube/notation.h"
 
 TEST(SolvedCube, IsRecognizedAsSolved) {
     cube::CubeState c = cube::solved_cube();
@@ -216,4 +217,76 @@ TEST(Invariants, PermutationParityMatchesAfterScramble) {
     for (cube::Move m : SCRAMBLE) cube::apply_move(c, m);
     EXPECT_EQ(permutation_parity(c.corner_positions),
               permutation_parity(c.edge_positions));
+}
+
+TEST(Notation, ToStringMatchesExpectedNames) {
+    EXPECT_EQ(cube::to_string(cube::Move::U),       "U");
+    EXPECT_EQ(cube::to_string(cube::Move::U_prime), "U'");
+    EXPECT_EQ(cube::to_string(cube::Move::U2),      "U2");
+    EXPECT_EQ(cube::to_string(cube::Move::B2),      "B2");
+}
+
+TEST(Notation, ParseMoveAcceptsValidStrings) {
+    EXPECT_EQ(cube::parse_move("U"),  cube::Move::U);
+    EXPECT_EQ(cube::parse_move("U'"), cube::Move::U_prime);
+    EXPECT_EQ(cube::parse_move("U2"), cube::Move::U2);
+    EXPECT_EQ(cube::parse_move("B'"), cube::Move::B_prime);
+}
+
+TEST(Notation, ParseMoveRejectsInvalid) {
+    EXPECT_FALSE(cube::parse_move("").has_value());
+    EXPECT_FALSE(cube::parse_move("X").has_value());
+    EXPECT_FALSE(cube::parse_move("U3").has_value());
+    EXPECT_FALSE(cube::parse_move("UU").has_value());
+    EXPECT_FALSE(cube::parse_move("u").has_value());
+    EXPECT_FALSE(cube::parse_move("R'2").has_value());
+}
+
+TEST(Notation, RoundTripForAllMoves) {
+    for (cube::Move m : ALL_MOVES) {
+        auto parsed = cube::parse_move(cube::to_string(m));
+        ASSERT_TRUE(parsed.has_value()) << "failed for " << static_cast<int>(m);
+        EXPECT_EQ(*parsed, m);
+    }
+}
+
+TEST(Notation, ParseSequenceHandlesSpacing) {
+    auto seq = cube::parse_sequence("R U R' U'");
+    ASSERT_TRUE(seq.has_value());
+    ASSERT_EQ(seq->size(), 4u);
+    EXPECT_EQ((*seq)[0], cube::Move::R);
+    EXPECT_EQ((*seq)[1], cube::Move::U);
+    EXPECT_EQ((*seq)[2], cube::Move::R_prime);
+    EXPECT_EQ((*seq)[3], cube::Move::U_prime);
+}
+
+TEST(Notation, ParseSequenceHandlesExtraWhitespace) {
+    auto seq = cube::parse_sequence("  R   U  R'\tU'  ");
+    ASSERT_TRUE(seq.has_value());
+    EXPECT_EQ(seq->size(), 4u);
+}
+
+TEST(Notation, ParseSequenceEmptyIsEmptyVector) {
+    auto seq = cube::parse_sequence("");
+    ASSERT_TRUE(seq.has_value());
+    EXPECT_EQ(seq->size(), 0u);
+
+    auto seq2 = cube::parse_sequence("   ");
+    ASSERT_TRUE(seq2.has_value());
+    EXPECT_EQ(seq2->size(), 0u);
+}
+
+TEST(Notation, ParseSequenceRejectsBadToken) {
+    EXPECT_FALSE(cube::parse_sequence("R U X U'").has_value());
+}
+
+TEST(Notation, ParsedSexyMoveSolvesAfterSixReps) {
+    auto seq = cube::parse_sequence("R U R' U'");
+    ASSERT_TRUE(seq.has_value());
+
+    cube::CubeState c = cube::solved_cube();
+    for (int rep = 0; rep < 6; ++rep) {
+        for (cube::Move m : *seq) cube::apply_move(c, m);
+    }
+    EXPECT_TRUE(cube::is_solved(c));
 }

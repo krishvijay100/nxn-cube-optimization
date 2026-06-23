@@ -96,8 +96,8 @@ Phase-level only for the full project. The current phase is expanded into steps 
 | # | Phase | Output | Status |
 |---|---|---|---|
 | 1 | **Project scaffolding** | CMake project, GoogleTest, Google Benchmark, hello-world build pipeline | ✅ done |
-| 2 | **3×3 cube engine** | `CubeState` + move application + invariant checks + tests/benchmarks | 🟡 in progress |
-| 3 | **3×3 scramble generator** | Random valid scrambles, reproducible with a seed | ⏳ |
+| 2 | **3×3 cube engine** | `CubeState` + move application + invariant checks + tests/benchmarks | ✅ done |
+| 3 | **3×3 scramble generator** | Random valid scrambles, reproducible with a seed | 🟡 next |
 | 4 | **Kociemba two-phase solver (3×3)** | IDA* search, pruning tables, near-optimal solutions in milliseconds | ⏳ |
 | 5 | **Performance pass on 3×3 solver** | Profiling, bitboards, cache-friendly layout, multithreading, possibly SIMD; before/after benchmarks | ⏳ |
 | 6 | **REST API + three.js visualizer (3×3)** | End-to-end browser demo. **Vertical slice complete.** | ⏳ |
@@ -108,22 +108,13 @@ Phase-level only for the full project. The current phase is expanded into steps 
 
 ---
 
-## Current phase — Phase 2: 3×3 cube engine
+## Current phase — Phase 3: 3×3 scramble generator
 
-Goal: a correct, tested, benchmarkable in-memory cube that can be scrambled and inspected.
+Goal: produce random valid scrambles, reproducible from a seed, with sensible move-sequence filtering (no `R R'` adjacent, no same-face repeats).
 
-| Step | Description | Status |
-|---|---|---|
-| 2.1 | `CubeState` struct (positions + orientations for corners and edges) | ✅ done |
-| 2.2 | `solved_cube()` constructor + `is_solved()` check + tests | ✅ done |
-| 2.3 | Define move enum + `apply_move(CubeState&, Move)` function | ⏳ next |
-| 2.4 | Hardcoded permutation/orientation tables for all 18 moves (U, U', U2, D, D', D2, R, R', R2, L, L', L2, F, F', F2, B, B', B2) | ⏳ |
-| 2.5 | Move tests: identity (M followed by M' returns to start), order (M⁴ = identity), full-cycle round-trip from a known scramble | ⏳ |
-| 2.6 | Invariant tests: corner orientation sum mod 3 = 0, edge orientation sum mod 2 = 0 hold after any move | ⏳ |
-| 2.7 | Move-application benchmark (moves/second) for baseline | ⏳ |
-| 2.8 | Notation layer: `Move` ↔ cubing string ("R'", "U2", etc.) with round-trip tests | ⏳ |
-
-Step 2.3–2.5 is the conceptual core of this phase. Once moves work and round-trip cleanly, the rest is mechanical.
+Phase 2 baseline (for reference when Phase 5 perf pass lands):
+- Single `apply_move`: ~10 ns
+- 18-move scramble: ~179 ns total (~100M moves/sec throughput)
 
 ---
 

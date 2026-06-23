@@ -19,4 +19,17 @@ CubeState solved_cube();
 
 bool is_solved(const CubeState& c);
 
+enum class Move : uint8_t {
+    U, U_prime, U2,
+    D, D_prime, D2,
+    R, R_prime, R2,
+    L, L_prime, L2,
+    F, F_prime, F2,
+    B, B_prime, B2,
+};
+
+constexpr int NUM_MOVES = 18;
+
+void apply_move(CubeState& c, Move m);
+
 }

@@ -1,6 +1,6 @@
 # nxn-cube-optimization
 
-High-performance N×N Rubik's Cube solver in C++.
+High-performance N×N Rubik's Cube solver in C++. Uses Reduction to solve the cube's centers and pair its edges (including handling parity cases) so it behaves like a 3×3, then applies Kociemba's two-phase algorithm to solve the remaining 3×3 state.
 
 ## Build
 

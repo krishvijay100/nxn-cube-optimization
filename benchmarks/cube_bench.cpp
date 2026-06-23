@@ -1,10 +1,19 @@
 #include <benchmark/benchmark.h>
 #include "cube/cube.h"
 
-static void BM_PlaceholderAdd(benchmark::State& state) {
+static void BM_SolvedCubeConstruction(benchmark::State& state) {
     for (auto _ : state) {
-        int result = cube::placeholder_add(2, 3);
+        cube::CubeState c = cube::solved_cube();
+        benchmark::DoNotOptimize(c);
+    }
+}
+BENCHMARK(BM_SolvedCubeConstruction);
+
+static void BM_IsSolvedCheck(benchmark::State& state) {
+    cube::CubeState c = cube::solved_cube();
+    for (auto _ : state) {
+        bool result = cube::is_solved(c);
         benchmark::DoNotOptimize(result);
     }
 }
-BENCHMARK(BM_PlaceholderAdd);
+BENCHMARK(BM_IsSolvedCheck);

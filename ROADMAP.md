@@ -97,8 +97,8 @@ Phase-level only for the full project. The current phase is expanded into steps 
 |---|---|---|---|
 | 1 | **Project scaffolding** | CMake project, GoogleTest, Google Benchmark, hello-world build pipeline | ✅ done |
 | 2 | **3×3 cube engine** | `CubeState` + move application + invariant checks + tests/benchmarks | ✅ done |
-| 3 | **3×3 scramble generator** | Random valid scrambles, reproducible with a seed | 🟡 next |
-| 4 | **Kociemba two-phase solver (3×3)** | IDA* search, pruning tables, near-optimal solutions in milliseconds | ⏳ |
+| 3 | **3×3 scramble generator** | Random valid scrambles, reproducible with a seed | ✅ done |
+| 4 | **Kociemba two-phase solver (3×3)** | IDA* search, pruning tables, near-optimal solutions in milliseconds | 🟡 next |
 | 5 | **Performance pass on 3×3 solver** | Profiling, bitboards, cache-friendly layout, multithreading, possibly SIMD; before/after benchmarks | ⏳ |
 | 6 | **REST API + three.js visualizer (3×3)** | End-to-end browser demo. **Vertical slice complete.** | ⏳ |
 | 7 | **Generalize cube engine to N×N** | Same `CubeState` shape parameterized by N; all moves work for any N | ⏳ |
@@ -108,11 +108,13 @@ Phase-level only for the full project. The current phase is expanded into steps 
 
 ---
 
-## Current phase — Phase 3: 3×3 scramble generator
+## Current phase — Phase 4: Kociemba two-phase solver (3×3)
 
-Goal: produce random valid scrambles, reproducible from a seed, with sensible move-sequence filtering (no `R R'` adjacent, no same-face repeats).
+Goal: IDA* search through coordinate-encoded state, with pruning tables, producing near-optimal solutions in milliseconds.
 
-Phase 2 baseline (for reference when Phase 5 perf pass lands):
+This is the algorithmic heart of the project. Expected to be the longest phase.
+
+Phase 2 perf baseline (for reference when Phase 5 perf pass lands):
 - Single `apply_move`: ~10 ns
 - 18-move scramble: ~179 ns total (~100M moves/sec throughput)
 

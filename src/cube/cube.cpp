@@ -36,10 +36,23 @@ struct MoveTable {
 
 namespace {
 
-// U: cycles top-layer corners URF -> UFL -> ULB -> UBR -> URF
-//    cycles top-layer edges   UR  -> UF  -> UL  -> UB  -> UR
-// Corner orientations unchanged (rotation around U/D axis).
-// Edge orientations unchanged (Kociemba convention: only F/B flip edges).
+// All six quarter-turn tables below are clockwise (CW) face turns, derived from the
+// physical rotation cycles and cross-verified slot-by-slot against the pycuber library
+// (positions) plus the project's orientation convention. See the per-move comments for
+// the piece-moves-to cycle each encodes.
+//
+// Convention B reminder: perm[i] = j means "after the move, slot i holds the piece that
+// was at slot j before the move." So a CW cycle a -> b -> c -> d -> a (piece-moves-to)
+// becomes perm[b]=a, perm[c]=b, perm[d]=c, perm[a]=d.
+//
+// Orientation convention:
+//   Corners: twist measured around the U/D axis, value in {0,1,2}. U/D moves never twist.
+//            (This project measures the twist sign opposite to pycuber, hence +1/+2 are
+//            swapped vs that library; it is internally consistent and sums to 0 mod 3.)
+//   Edges:   Kociemba convention, value in {0,1}. ONLY F and B flip their four edges.
+
+// U (CW from top): corners URF -> UFL -> ULB -> UBR -> URF  (0->1->2->3->0)
+//                  edges   UR  -> UF  -> UL  -> UB  -> UR    (0->1->2->3->0)
 constexpr MoveTable MOVE_U = {
     {3,0,1,2,4,5,6,7},
     {0,0,0,0,0,0,0,0},
@@ -47,53 +60,41 @@ constexpr MoveTable MOVE_U = {
     {0,0,0,0,0,0,0,0,0,0,0,0},
 };
 
-// D: cycles bottom-layer corners DFR -> DLF -> DBL -> DRB -> DFR
-//    cycles bottom-layer edges   DR  -> DF  -> DL  -> DB  -> DR
+// D (CW from bottom): corners DFR -> DRB -> DBL -> DLF -> DFR  (4->7->6->5->4)
+//                     edges   DR  -> DB  -> DL  -> DF  -> DR    (4->7->6->5->4)
 constexpr MoveTable MOVE_D = {
-    {0,1,2,3,7,4,5,6},
+    {0,1,2,3,5,6,7,4},
     {0,0,0,0,0,0,0,0},
-    {0,1,2,3,7,4,5,6,8,9,10,11},
+    {0,1,2,3,5,6,7,4,8,9,10,11},
     {0,0,0,0,0,0,0,0,0,0,0,0},
 };
 
-// R: cycles corners URF -> DRB -> DFR -> UBR (... slots 0,7,4,3 in our indexing)
-//    Net: corner_perm = {DFR, UFL, ULB, URF, DRB, DLF, DBL, UBR}
-//                      = {  4,   1,   2,   0,   7,   5,   6,   3}
-//    Cycles edges UR -> BR -> DR -> FR -> UR (slots 0,11,4,8)
-//    Net: edge_perm = {BR, UF, UL, UB, FR, DF, DL, DB, UR, FL, BL, DR}
-//                   = {11,  1,  2,  3,  8,  5,  6,  7,  0,  9, 10,  4}
-//    Corner orientations twist:
-//      Slots gaining a U-face piece: rotation moves the U sticker off the U-face.
-//      Standard Kociemba: URF +1, UBR +2, DFR +2, DRB +1.
+// R (CW from right): corners DFR -> URF -> UBR -> DRB -> DFR  (4->0->3->7->4)
+//                    edges   FR  -> UR  -> BR  -> DR  -> FR    (8->0->11->4->8)
+//    Corner twists (our convention): URF +2, UBR +1, DFR +1, DRB +2 (sum 6 = 0 mod 3).
+//    R does not flip edges (only F/B do).
 constexpr MoveTable MOVE_R = {
     {4,1,2,0,7,5,6,3},
     {2,0,0,1,1,0,0,2},
-    {11,1,2,3,8,5,6,7,0,9,10,4},
+    {8,1,2,3,11,5,6,7,4,9,10,0},
     {0,0,0,0,0,0,0,0,0,0,0,0},
 };
 
-// L: cycles corners UFL -> ULB -> DBL -> DLF -> UFL (slots 1,2,6,5)
-//    corner_perm = {URF, DLF, UFL, UBR, DFR, DBL, ULB, DRB}
-//                = {  0,   5,   1,   3,   4,   6,   2,   7}
-//    Cycles edges UL -> FL -> DL -> BL -> UL (slots 2,9,6,10)
-//    edge_perm = {UR, UF, FL, UB, DR, DF, BL, DB, FR, DL, UL, BR}
-//              = { 0,  1,  9,  3,  4,  5, 10,  7,  8,  6,  2, 11}
-//    Corner orientation deltas: UFL +1, ULB +2, DBL +1, DLF +2.
+// L (CW from left): corners DLF -> DBL -> ULB -> UFL -> DLF  (5->6->2->1->5)
+//                   edges   FL  -> DL  -> BL  -> UL  -> FL    (9->6->10->2->9)
+//    Corner twists (our convention): UFL +1, ULB +2, DLF +2, DBL +1 (sum 6 = 0 mod 3).
+//    L does not flip edges.
 constexpr MoveTable MOVE_L = {
-    {0,5,1,3,4,6,2,7},
+    {0,2,6,3,4,1,5,7},
     {0,1,2,0,0,2,1,0},
-    {0,1,9,3,4,5,10,7,8,6,2,11},
+    {0,1,10,3,4,5,9,7,8,2,6,11},
     {0,0,0,0,0,0,0,0,0,0,0,0},
 };
 
-// F: cycles corners URF -> DFR -> DLF -> UFL -> URF (slots 0,4,5,1)
-//    corner_perm = {UFL, DLF, ULB, UBR, URF, DFR, DBL, DRB}
-//                = {  1,   5,   2,   3,   0,   4,   6,   7}
-//    Cycles edges UF -> FR -> DF -> FL -> UF (slots 1,8,5,9)
-//    edge_perm = {UR, FL, UL, UB, DR, FR, DL, DB, UF, DF, BL, BR}
-//              = { 0,  9,  2,  3,  4,  8,  6,  7,  1,  5, 10, 11}
-//    Corner deltas: URF +1, UFL +2, DLF +1, DFR +2.
-//    Edge orientations: all four affected edges flip (+1 mod 2).
+// F (CW from front): corners URF -> DFR -> DLF -> UFL -> URF  (0->4->5->1->0)
+//                    edges   UF  -> FR  -> DF  -> FL  -> UF    (1->8->5->9->1)
+//    Corner twists (our convention): URF +1, UFL +2, DFR +2, DLF +1 (sum 6 = 0 mod 3).
+//    Edge orientations: all four affected edges flip (slots 1,5,8,9).
 constexpr MoveTable MOVE_F = {
     {1,5,2,3,0,4,6,7},
     {1,2,0,0,2,1,0,0},
@@ -101,18 +102,14 @@ constexpr MoveTable MOVE_F = {
     {0,1,0,0,0,1,0,0,1,1,0,0},
 };
 
-// B: cycles corners ULB -> UBR -> DRB -> DBL -> ULB (slots 2,3,7,6)
-//    corner_perm = {URF, UFL, UBR, DRB, DFR, DLF, ULB, DBL}
-//                = {  0,   1,   3,   7,   4,   5,   2,   6}
-//    Cycles edges UB -> BL -> DB -> BR -> UB (slots 3,10,7,11)
-//    edge_perm = {UR, UF, UL, BR, DR, DF, DL, BL, FR, FL, DB, UB}
-//              = { 0,  1,  2, 11,  4,  5,  6, 10,  8,  9,  7,  3}
-//    Corner deltas: ULB +1, UBR +2, DRB +1, DBL +2.
-//    Edge orientations: all four affected edges flip.
+// B (CW from back): corners UBR -> ULB -> DBL -> DRB -> UBR  (3->2->6->7->3)
+//                   edges   UB  -> BL  -> DB  -> BR  -> UB    (3->10->7->11->3)
+//    Corner twists (our convention): ULB +1, UBR +2, DBL +2, DRB +1 (sum 6 = 0 mod 3).
+//    Edge orientations: all four affected edges flip (slots 3,7,10,11).
 constexpr MoveTable MOVE_B = {
     {0,1,3,7,4,5,2,6},
     {0,0,1,2,0,0,2,1},
-    {0,1,2,11,4,5,6,10,8,9,7,3},
+    {0,1,2,11,4,5,6,10,8,9,3,7},
     {0,0,0,1,0,0,0,1,0,0,1,1},
 };
 

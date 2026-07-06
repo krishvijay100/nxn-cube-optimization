@@ -53,4 +53,36 @@ struct Phase1Coords {
 
 Phase1Coords phase1_coords_of(const CubeState& c);
 
+// ---------- Phase 2 permutation coords ----------
+//
+// Once inside G1, the remaining work is permutation only:
+//   - Corner permutation: 8 corners in slots 0-7              [0..40319 (8!)]
+//   - U/D edge permutation: 8 non-equator edges in slots 0-7  [0..40319 (8!)]
+//   - Slice permutation: 4 equator edges in slots 8-11        [0..23    (4!)]
+//
+// All three use Lehmer-code + factorial-base encoding, so the solved cube
+// is coord 0 for each of them (aka identity permutation)
+
+constexpr Coord CORNER_PERM_COORDS  = 40320;
+constexpr Coord EDGE_PERM_UD_COORDS = 40320;
+constexpr Coord SLICE_PERM_COORDS   = 24;
+
+Coord encode_corner_perm(const CubeState& c);
+std::array<uint8_t, NUM_CORNERS> decode_corner_perm(Coord coord);
+
+Coord encode_edge_perm_ud(const CubeState& c);
+std::array<uint8_t, 8> decode_edge_perm_ud(Coord coord);
+
+Coord encode_slice_perm(const CubeState& c);
+std::array<uint8_t, 4> decode_slice_perm(Coord coord);
+
+// Aggregator: bundle Phase 2's three coords together for search callers
+struct Phase2Coords {
+    Coord corner_perm;
+    Coord edge_perm_ud;
+    Coord slice_perm;
+};
+
+Phase2Coords phase2_coords_of(const CubeState& c);
+
 }

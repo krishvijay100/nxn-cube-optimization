@@ -29,6 +29,64 @@ constexpr bool is_equator_edge(uint8_t edge_id) {
     return edge_id >= 8;
 }
 
+// Factorials for the Lehmer / factorial-base encoding of permutations.
+// Largest we need is 8! = 40320; storing through 12! is future-proofing at
+// zero cost (constexpr, resolved at compile time).
+constexpr std::array<uint32_t, 13> make_factorials() {
+    std::array<uint32_t, 13> f{};
+    f[0] = 1;
+    for (int i = 1; i <= 12; ++i) f[i] = f[i - 1] * static_cast<uint32_t>(i);
+    return f;
+}
+constexpr auto FACT = make_factorials();
+
+// Lehmer-code encode/decode over an arbitrary N-permutation whose values are
+// exactly {0, 1, ..., N-1} (note: identity is coord 0)
+//
+// Encoding: L[i] = count of j > i with perm[j] < perm[i]. then
+// coord = sum over i of L[i] * (N - 1 - i)!.
+// Decoding is the inverse: peel off factorial digits, then reconstruct the
+// permutation by selecting the L[i]-th remaining unused value.
+template <size_t N>
+uint32_t lehmer_encode(const std::array<uint8_t, N>& perm) {
+    uint32_t coord = 0;
+    for (size_t i = 0; i < N; ++i) {
+        uint8_t lehmer = 0;
+        for (size_t j = i + 1; j < N; ++j) {
+            if (perm[j] < perm[i]) ++lehmer;
+        }
+        coord += lehmer * FACT[N - 1 - i];
+    }
+    return coord;
+}
+
+template <size_t N>
+std::array<uint8_t, N> lehmer_decode(uint32_t coord) {
+    std::array<uint8_t, N> lehmer{};
+    for (size_t i = 0; i < N; ++i) {
+        uint32_t w = FACT[N - 1 - i];
+        lehmer[i] = static_cast<uint8_t>(coord / w);
+        coord %= w;
+    }
+    // Rebuild the permutation: at step i, pick the lehmer[i]-th element still
+    // unused from the ordered pool {0..N-1}.
+    std::array<uint8_t, N> perm{};
+    std::array<bool, N> used{};
+    for (size_t i = 0; i < N; ++i) {
+        uint8_t skip = lehmer[i];
+        for (uint8_t v = 0; v < N; ++v) {
+            if (used[v]) continue;
+            if (skip == 0) {
+                perm[i] = v;
+                used[v] = true;
+                break;
+            }
+            --skip;
+        }
+    }
+    return perm;
+}
+
 }  // namespace
 
 Coord encode_corner_ori(const CubeState& c) {
@@ -107,6 +165,53 @@ Phase1Coords phase1_coords_of(const CubeState& c) {
         encode_corner_ori(c),
         encode_edge_ori(c),
         encode_slice(c),
+    };
+}
+
+// ---------- Phase 2 permutation coords ----------
+
+// Corner permutation: the 8 corner positions are already values in {0..7},
+// so hand them straight to the generic Lehmer encoder
+Coord encode_corner_perm(const CubeState& c) {
+    return static_cast<Coord>(lehmer_encode<8>(c.corner_positions));
+}
+
+std::array<uint8_t, NUM_CORNERS> decode_corner_perm(Coord coord) {
+    return lehmer_decode<8>(coord);
+}
+
+// U/D-slice edge permutation: values in edge_positions[0..7] inside G1 are
+// exactly {0..7} (the non-equator edges), so encode those 8 slots directly
+Coord encode_edge_perm_ud(const CubeState& c) {
+    std::array<uint8_t, 8> perm{};
+    for (size_t i = 0; i < 8; ++i) perm[i] = c.edge_positions[i];
+    return static_cast<Coord>(lehmer_encode<8>(perm));
+}
+
+std::array<uint8_t, 8> decode_edge_perm_ud(Coord coord) {
+    return lehmer_decode<8>(coord);
+}
+
+// Slice permutation: equator edges (ids 8..11) live in slots 8..11 inside G1
+// Normalize by subtracting 8 so the encoder sees values in {0..3}; identity
+// then corresponds to coord 0.
+Coord encode_slice_perm(const CubeState& c) {
+    std::array<uint8_t, 4> perm{};
+    for (size_t i = 0; i < 4; ++i) {
+        perm[i] = static_cast<uint8_t>(c.edge_positions[8 + i] - 8);
+    }
+    return static_cast<Coord>(lehmer_encode<4>(perm));
+}
+
+std::array<uint8_t, 4> decode_slice_perm(Coord coord) {
+    return lehmer_decode<4>(coord);
+}
+
+Phase2Coords phase2_coords_of(const CubeState& c) {
+    return {
+        encode_corner_perm(c),
+        encode_edge_perm_ud(c),
+        encode_slice_perm(c),
     };
 }
 

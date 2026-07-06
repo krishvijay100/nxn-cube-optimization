@@ -17,6 +17,16 @@ using cube::solver::CORNER_ORI_COORDS;
 using cube::solver::EDGE_ORI_COORDS;
 using cube::solver::SLICE_COORDS;
 using cube::solver::SLICE_GOAL;
+using cube::solver::encode_corner_perm;
+using cube::solver::decode_corner_perm;
+using cube::solver::encode_edge_perm_ud;
+using cube::solver::decode_edge_perm_ud;
+using cube::solver::encode_slice_perm;
+using cube::solver::decode_slice_perm;
+using cube::solver::phase2_coords_of;
+using cube::solver::CORNER_PERM_COORDS;
+using cube::solver::EDGE_PERM_UD_COORDS;
+using cube::solver::SLICE_PERM_COORDS;
 
 // ---------- Corner orientation ----------
 
@@ -138,7 +148,132 @@ TEST(SliceCoord, RoundTripAllCoords) {
     }
 }
 
-// ---------- Aggregator ----------
+// ---------- Corner permutation ----------
+
+TEST(CornerPermCoord, SolvedCubeIsZero) {
+    EXPECT_EQ(encode_corner_perm(cube::solved_cube()), 0u);
+}
+
+TEST(CornerPermCoord, AfterUMoveHasExpectedCoord) {
+    // U cycles corners URF->UFL->ULB->UBR->URF, so corner_positions becomes
+    // {3,0,1,2,4,5,6,7}. Lehmer code = {3,0,0,0,0,0,0,0}. Factorial-base:
+    //   3 * 7! = 3 * 5040 = 15120.
+    CubeState c = cube::solved_cube();
+    cube::apply_move(c, Move::U);
+    EXPECT_EQ(encode_corner_perm(c), 15120u);
+}
+
+TEST(CornerPermCoord, RoundTripSampled) {
+    // Exhaustive over 40320 is fast enough here (fits under 1s trivially)
+    for (Coord coord = 0; coord < CORNER_PERM_COORDS; ++coord) {
+        auto perm = decode_corner_perm(coord);
+
+        std::array<bool, 8> seen{};
+        for (auto v : perm) {
+            ASSERT_LT(v, 8u) << "coord " << coord;
+            ASSERT_FALSE(seen[v]) << "duplicate value " << int(v) << " at coord " << coord;
+            seen[v] = true;
+        }
+
+        CubeState c = cube::solved_cube();
+        c.corner_positions = perm;
+        ASSERT_EQ(encode_corner_perm(c), coord) << "round-trip failed for coord " << coord;
+    }
+}
+
+// ---------- U/D edge permutation ----------
+
+TEST(EdgePermUDCoord, SolvedCubeIsZero) {
+    EXPECT_EQ(encode_edge_perm_ud(cube::solved_cube()), 0u);
+}
+
+TEST(EdgePermUDCoord, AfterUMoveHasExpectedCoord) {
+    // U cycles edges UR->UF->UL->UB->UR, so edge_positions[0..7] becomes
+    // {3,0,1,2,4,5,6,7}, same shape as corner case above
+    // Lehmer = {3,0,0,0,0,0,0,0}, coord = 3 * 7! = 15120
+    CubeState c = cube::solved_cube();
+    cube::apply_move(c, Move::U);
+    EXPECT_EQ(encode_edge_perm_ud(c), 15120u);
+}
+
+TEST(EdgePermUDCoord, RoundTripSampled) {
+    for (Coord coord = 0; coord < EDGE_PERM_UD_COORDS; ++coord) {
+        auto perm = decode_edge_perm_ud(coord);
+
+        std::array<bool, 8> seen{};
+        for (auto v : perm) {
+            ASSERT_LT(v, 8u) << "coord " << coord;
+            ASSERT_FALSE(seen[v]) << "duplicate value " << int(v) << " at coord " << coord;
+            seen[v] = true;
+        }
+
+        // Rebuild only slots 0-7; leave equator slots at their solved values
+        // so encode_edge_perm_ud can read them cleanly (it only touches 0..7)
+        CubeState c = cube::solved_cube();
+        for (size_t i = 0; i < 8; ++i) c.edge_positions[i] = perm[i];
+        ASSERT_EQ(encode_edge_perm_ud(c), coord) << "round-trip failed for coord " << coord;
+    }
+}
+
+// ---------- Slice permutation ----------
+
+TEST(SlicePermCoord, SolvedCubeIsZero) {
+    EXPECT_EQ(encode_slice_perm(cube::solved_cube()), 0u);
+}
+
+TEST(SlicePermCoord, ReversedSliceHasMaxCoord) {
+    // Equator edges reversed in their slots: {11,10,9,8} in slots 8-11
+    // Normalized by subtracting 8: {3,2,1,0}. Lehmer = {3,2,1,0}
+    // coord = 3*3! + 2*2! + 1*1! + 0*0! = 18 + 4 + 1 + 0 = 23 (= 4! - 1)
+    CubeState c = cube::solved_cube();
+    c.edge_positions[8]  = 11;
+    c.edge_positions[9]  = 10;
+    c.edge_positions[10] = 9;
+    c.edge_positions[11] = 8;
+    EXPECT_EQ(encode_slice_perm(c), 23u);
+}
+
+TEST(SlicePermCoord, RoundTripAllCoords) {
+    for (Coord coord = 0; coord < SLICE_PERM_COORDS; ++coord) {
+        auto perm = decode_slice_perm(coord);
+
+        std::array<bool, 4> seen{};
+        for (auto v : perm) {
+            ASSERT_LT(v, 4u) << "coord " << coord;
+            ASSERT_FALSE(seen[v]) << "duplicate value " << int(v) << " at coord " << coord;
+            seen[v] = true;
+        }
+
+        CubeState c = cube::solved_cube();
+        for (size_t i = 0; i < 4; ++i) {
+            c.edge_positions[8 + i] = static_cast<uint8_t>(perm[i] + 8);
+        }
+        ASSERT_EQ(encode_slice_perm(c), coord) << "round-trip failed for coord " << coord;
+    }
+}
+
+// ---------- Phase 2 aggregator ----------
+
+TEST(Phase2Coords, SolvedCubeIsAllZero) {
+    auto p = phase2_coords_of(cube::solved_cube());
+    EXPECT_EQ(p.corner_perm,  0u);
+    EXPECT_EQ(p.edge_perm_ud, 0u);
+    EXPECT_EQ(p.slice_perm,   0u);
+}
+
+TEST(Phase2Coords, DelegatesToPrimitives) {
+    // U is a G1 move so it's safe to use in the test here
+    CubeState c = cube::solved_cube();
+    cube::apply_move(c, Move::U);
+    cube::apply_move(c, Move::U);   // U2 for good measure
+
+    auto p = phase2_coords_of(c);
+    EXPECT_EQ(p.corner_perm,  encode_corner_perm(c));
+    EXPECT_EQ(p.edge_perm_ud, encode_edge_perm_ud(c));
+    EXPECT_EQ(p.slice_perm,   encode_slice_perm(c));
+}
+
+// ---------- Phase 1 aggregator ----------
 
 TEST(Phase1Coords, SolvedCubeIsAtGoal) {
     // Orientation coords zero, slice coord at SLICE_GOAL.

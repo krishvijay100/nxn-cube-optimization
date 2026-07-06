@@ -1,5 +1,7 @@
 #include "solver/coords.h"
 
+#include <cstddef>
+
 namespace cube::solver {
 
 namespace {

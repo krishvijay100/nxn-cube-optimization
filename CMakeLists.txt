@@ -41,6 +41,7 @@ target_compile_options(cube PRIVATE -Wall -Wextra -Wpedantic)
 add_library(solver
     src/solver/coords.cpp
     src/solver/move_tables.cpp
+    src/solver/pruning.cpp
 )
 target_include_directories(solver PUBLIC src)
 target_link_libraries(solver PUBLIC cube)

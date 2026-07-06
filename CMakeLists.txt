@@ -38,6 +38,13 @@ add_library(cube
 target_include_directories(cube PUBLIC src)
 target_compile_options(cube PRIVATE -Wall -Wextra -Wpedantic)
 
+add_library(solver
+    src/solver/coords.cpp
+)
+target_include_directories(solver PUBLIC src)
+target_link_libraries(solver PUBLIC cube)
+target_compile_options(solver PRIVATE -Wall -Wextra -Wpedantic)
+
 add_executable(nxn_cube app/main.cpp)
 target_link_libraries(nxn_cube PRIVATE cube)
 

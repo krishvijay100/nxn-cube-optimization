@@ -11,8 +11,12 @@ using cube::solver::decode_corner_ori;
 using cube::solver::encode_edge_ori;
 using cube::solver::decode_edge_ori;
 using cube::solver::phase1_coords_of;
+using cube::solver::encode_slice;
+using cube::solver::decode_slice;
 using cube::solver::CORNER_ORI_COORDS;
 using cube::solver::EDGE_ORI_COORDS;
+using cube::solver::SLICE_COORDS;
+using cube::solver::SLICE_GOAL;
 
 // ---------- Corner orientation ----------
 
@@ -73,12 +77,75 @@ TEST(EdgeOriCoord, RoundTripAllCoords) {
     }
 }
 
+// ---------- Slice position ----------
+
+TEST(SliceCoord, SolvedCubeIsGoal) {
+    // In the solved cube the four equator edges live in slots {8,9,10,11}.
+    EXPECT_EQ(encode_slice(cube::solved_cube()), SLICE_GOAL);
+}
+
+TEST(SliceCoord, LowestSubsetIsZero) {
+    // Equator edges (ids 8..11) placed into slots {0,1,2,3} => coord 0.
+    // Non-equator edges (0..7) fill the remaining slots {4..11}.
+    CubeState c = cube::solved_cube();
+    c.edge_positions = {8, 9, 10, 11, 0, 1, 2, 3, 4, 5, 6, 7};
+    EXPECT_EQ(encode_slice(c), 0u);
+}
+
+TEST(SliceCoord, AfterFMoveMatchesEquatorMovement) {
+    // F moves the FR edge (id 8) from slot 8 -> slot 1, and FL (id 9)
+    // from slot 9 -> slot 5. So equator edges now occupy slots {1,5,10,11}.
+    // Combinadic (colex) rank: C(11,4)+C(10,3)+C(5,2)+C(1,1)
+    //                        = 330 + 120 + 10 + 1 = 461.
+    CubeState c = cube::solved_cube();
+    cube::apply_move(c, cube::Move::F);
+    EXPECT_EQ(encode_slice(c), 461u);
+}
+
+TEST(SliceCoord, RoundTripAllCoords) {
+    // Every coord in [0, 495) must decode to a strictly-ascending 4-tuple
+    // of slot indices in [0,11], and re-encoding those slots must return
+    // the same coord.
+    for (Coord coord = 0; coord < SLICE_COORDS; ++coord) {
+        auto slots = decode_slice(coord);
+
+        // Structural: strictly ascending, all in range.
+        ASSERT_LT(slots[0], slots[1]) << "coord " << coord;
+        ASSERT_LT(slots[1], slots[2]) << "coord " << coord;
+        ASSERT_LT(slots[2], slots[3]) << "coord " << coord;
+        ASSERT_LT(slots[3], 12u)      << "coord " << coord;
+
+        // Rebuild a CubeState with equator edges at those exact slots and
+        // re-encode. This is what the move-table builder will do.
+        CubeState c = cube::solved_cube();
+        // First, wipe positions to sentinel non-equator values.
+        for (uint8_t i = 0; i < 12; ++i) c.edge_positions[i] = 0;  // placeholder
+        // Place the four equator edges into the target slots.
+        for (uint8_t k = 0; k < 4; ++k) {
+            c.edge_positions[slots[k]] = static_cast<uint8_t>(8 + k);
+        }
+        // Fill remaining slots with non-equator edge ids in ascending order.
+        uint8_t next_non_equator = 0;
+        for (uint8_t i = 0; i < 12; ++i) {
+            bool is_slice_slot = (i == slots[0] || i == slots[1] ||
+                                  i == slots[2] || i == slots[3]);
+            if (!is_slice_slot) {
+                c.edge_positions[i] = next_non_equator++;
+            }
+        }
+
+        EXPECT_EQ(encode_slice(c), coord) << "round-trip failed for coord " << coord;
+    }
+}
+
 // ---------- Aggregator ----------
 
-TEST(Phase1Coords, SolvedCubeIsAllZero) {
+TEST(Phase1Coords, SolvedCubeIsAtGoal) {
+    // Orientation coords zero, slice coord at SLICE_GOAL.
     auto p = phase1_coords_of(cube::solved_cube());
     EXPECT_EQ(p.corner_ori, 0u);
-    EXPECT_EQ(p.edge_ori, 0u);
+    EXPECT_EQ(p.edge_ori,   0u);
+    EXPECT_EQ(p.slice,      SLICE_GOAL);
 }
 
 TEST(Phase1Coords, DelegatesToPrimitives) {
@@ -92,4 +159,5 @@ TEST(Phase1Coords, DelegatesToPrimitives) {
     auto p = phase1_coords_of(c);
     EXPECT_EQ(p.corner_ori, encode_corner_ori(c));
     EXPECT_EQ(p.edge_ori,   encode_edge_ori(c));
+    EXPECT_EQ(p.slice,      encode_slice(c));
 }

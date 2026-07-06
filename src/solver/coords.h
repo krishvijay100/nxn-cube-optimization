@@ -32,12 +32,23 @@ constexpr Coord EDGE_ORI_COORDS = 2048;
 Coord encode_edge_ori(const CubeState& c);
 std::array<uint8_t, NUM_EDGES> decode_edge_ori(Coord coord);
 
+// Equator-slice position: which 4 of the 12 edge slots hold equator edges
+// (originally in slots 8..11 = FR, FL, BL, BR). Order within the slice is
+// ignored — this is a subset, not a permutation. Range: 0..494 (C(12,4)).
+//
+// Combinadic (colex) ranking: given the 4 slots c3 > c2 > c1 > c0 currently
+// holding equator edges, coord = C(c3,4) + C(c2,3) + C(c1,2) + C(c0,1).
+// note: the phase 1 goal state (slots {8,9,10,11}) is coord 494 (max).
+constexpr Coord SLICE_COORDS = 495;
+constexpr Coord SLICE_GOAL   = 494;
+Coord encode_slice(const CubeState& c);
+std::array<uint8_t, 4> decode_slice(Coord coord);
+
 // Aggregator: bundle Phase 1's three coords together for search callers.
-// (Slice coord added in a later commit — for now this is a placeholder shape.)
 struct Phase1Coords {
     Coord corner_ori;
     Coord edge_ori;
-    // Coord slice;   // to come
+    Coord slice;
 };
 
 Phase1Coords phase1_coords_of(const CubeState& c);

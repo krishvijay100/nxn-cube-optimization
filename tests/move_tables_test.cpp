@@ -27,15 +27,12 @@ TEST(G1Index, ReturnsMinusOneForNonG1Move) {
     EXPECT_EQ(g1_index(Move::B),       -1);
 }
 
-// Phase 1 table tests
-
 TEST(CornerOriTable, IdentityRowFromSolvedCube) {
     const auto& t = cube::solver::corner_ori_move_table();
     for (Move m : {Move::U, Move::U_prime, Move::U2, Move::D, Move::D_prime, Move::D2}) {
         EXPECT_EQ(t[0][static_cast<uint8_t>(m)], 0u)
             << "U/D move " << static_cast<int>(m) << " changed corner ori from solved";
     }
-    // R quarter-turn from solved -> the known coord 1494
     EXPECT_EQ(t[0][static_cast<uint8_t>(Move::R)], 1494u);
 }
 
@@ -49,7 +46,6 @@ TEST(EdgeOriTable, OnlyFBMovesFlipEdgesFromSolved) {
         EXPECT_EQ(t[0][m], 0u)
             << "move " << static_cast<int>(m) << " flipped edges from solved";
     }
-    // F quarter from solved -> the known coord 550
     EXPECT_EQ(t[0][static_cast<uint8_t>(Move::F)], 550u);
 }
 
@@ -58,12 +54,10 @@ TEST(SliceTable, GoalCoordFromF) {
     EXPECT_EQ(t[cube::solver::SLICE_GOAL][static_cast<uint8_t>(Move::F)], 461u);
 }
 
-// Phase 2 table tests
-
 TEST(CornerPermTable, USolvedRow) {
     const auto& t = cube::solver::corner_perm_move_table();
     EXPECT_EQ(t[0][g1_index(Move::U)], 15120u);
-    // confirming U2 twice equals identity
+    // U2 twice is identity
     Coord after_u2 = t[0][g1_index(Move::U2)];
     EXPECT_EQ(t[after_u2][g1_index(Move::U2)], 0u);
 }
@@ -87,12 +81,7 @@ TEST(SlicePermTable, R2IsAnInvolution) {
     EXPECT_EQ(t[after][g1_index(Move::R2)], 0u);
 }
 
-// ---------- Cross-check: tables agree with the reference engine ----------
-//
-// The strongest test: for many random states, applying a move via the table
-// must give the same next coord as applying the move via the reference
-// engine and then re-encoding. This catches every possible table-build bug.
-
+// for many random states, table lookup must match apply_move + re-encode
 namespace {
 
 CubeState random_state(std::mt19937& rng) {

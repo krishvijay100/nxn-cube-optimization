@@ -6,8 +6,10 @@ namespace cube::solver {
 
 namespace {
 
-// Build new CubeState that has given corner orientations and everything else
-//at solved defaults; used to seed corner-orientation move table
+// seeds a CubeState from a decoded coord, leaving everything
+// the coord doesn't cover at solved defaults (because each coord's
+// transform under a move only reads the array it encodes)
+
 CubeState state_with_corner_ori(const std::array<uint8_t, NUM_CORNERS>& ori) {
     CubeState c = solved_cube();
     c.corner_orientations = ori;
@@ -20,15 +22,12 @@ CubeState state_with_edge_ori(const std::array<uint8_t, NUM_EDGES>& ori) {
     return c;
 }
 
-// For a slice-position coord (which 4 slots hold equator edges), place the
-// four equator-edge ids into those slots and non-equator ids into the rest.
-// Orientation of the placed edges is irrelevant to the slice coord.
+// puts equator edges at the given slots, non-equator edges fill the rest
 CubeState state_with_slice(const std::array<uint8_t, 4>& slice_slots) {
     CubeState c = solved_cube();
     for (uint8_t k = 0; k < 4; ++k) {
         c.edge_positions[slice_slots[k]] = static_cast<uint8_t>(8 + k);
     }
-    // Fill remaining slots with non-equator edges (ids 0-7) in order
     uint8_t next_non_equator = 0;
     for (uint8_t i = 0; i < NUM_EDGES; ++i) {
         bool is_slice = (i == slice_slots[0] || i == slice_slots[1] ||
@@ -44,17 +43,14 @@ CubeState state_with_corner_perm(const std::array<uint8_t, NUM_CORNERS>& perm) {
     return c;
 }
 
-// Phase-2 U/D edge permutation coord captures edge_positions[0-7] as a
-// permutation of {0-7}. Inside G1 the equator slots (8-11) still hold their
-// equator edges, so leave those at solved defaults
+// only fills slots 0-7; equator slots stay at solved defaults
 CubeState state_with_edge_perm_ud(const std::array<uint8_t, 8>& perm) {
     CubeState c = solved_cube();
     for (size_t i = 0; i < 8; ++i) c.edge_positions[i] = perm[i];
     return c;
 }
 
-// Phase-2 slice permutation coord captures edge_positions[8-11]. Normalize
-// on decode: perm values are {0-3}, add 8 to recover edge ids {8-11}.
+// perm values are {0-3}; add 8 to recover the equator edge ids {8-11}
 CubeState state_with_slice_perm(const std::array<uint8_t, 4>& perm) {
     CubeState c = solved_cube();
     for (size_t i = 0; i < 4; ++i) {
@@ -63,12 +59,9 @@ CubeState state_with_slice_perm(const std::array<uint8_t, 4>& perm) {
     return c;
 }
 
-// ---------- Table builders ----------
-//
-// Each builder returns a unique_ptr to avoid a giant object on the initial
-// stack frame of the getter; CornerPermTable and EdgePermUDTable
-// are ~1.4 MB each which is comfortably heap-sized. Getter caches the pointer as
-// function-local static.
+// builders return unique_ptrs because the corner_perm / edge_perm_ud tables
+// are ~1.4 MB each: too big for the getter's stack frame. getter caches the
+// pointer as a function-local static
 
 std::unique_ptr<CornerOriTable> build_corner_ori_table() {
     auto t = std::make_unique<CornerOriTable>();

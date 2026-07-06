@@ -17,15 +17,10 @@ CubeState solved_cube() {
     return c;
 }
 
-// Slot ordering:
-//   Corners 0..7:  URF, UFL, ULB, UBR, DFR, DLF, DBL, DRB
-//   Edges   0..11: UR,  UF,  UL,  UB,  DR,  DF,  DL,  DB,  FR, FL, BL, BR
-//
-// Convention B: corner_perm[i] = j means "after the move, slot i holds the
-// piece that came from slot j." Same for edges.
-//
-// Orientation deltas are added (mod 3 for corners, mod 2 for edges) to the
-// orientation of the piece moving INTO slot i.
+// slot ordering:
+//   corners 0-7:  URF, UFL, ULB, UBR, DFR, DLF, DBL, DRB
+//   edges   0-11: UR,  UF,  UL,  UB,  DR,  DF,  DL,  DB,  FR, FL, BL, BR
+// convention: perm[i]=j means "slot i now holds the piece formerly at slot j"
 
 struct MoveTable {
     std::array<uint8_t, NUM_CORNERS> corner_perm;
@@ -36,23 +31,11 @@ struct MoveTable {
 
 namespace {
 
-// All six quarter-turn tables below are clockwise (CW) face turns, derived from the
-// physical rotation cycles and cross-verified slot-by-slot against the pycuber library
-// (positions) plus the project's orientation convention. See the per-move comments for
-// the piece-moves-to cycle each encodes.
-//
-// Convention B reminder: perm[i] = j means "after the move, slot i holds the piece that
-// was at slot j before the move." So a CW cycle a -> b -> c -> d -> a (piece-moves-to)
-// becomes perm[b]=a, perm[c]=b, perm[d]=c, perm[a]=d.
-//
-// Orientation convention:
-//   Corners: twist measured around the U/D axis, value in {0,1,2}. U/D moves never twist.
-//            (This project measures the twist sign opposite to pycuber, hence +1/+2 are
-//            swapped vs that library; it is internally consistent and sums to 0 mod 3.)
-//   Edges:   Kociemba convention, value in {0,1}. ONLY F and B flip their four edges.
+// clockwise quarter-turn tables, cross-verified against pycuber
+// twist sign convention: opposite of pycuber (+1/+2 swapped) but consistent
+// and sums to 0 mod 3. only F/B flip edges
 
-// U (CW from top): corners URF -> UFL -> ULB -> UBR -> URF  (0->1->2->3->0)
-//                  edges   UR  -> UF  -> UL  -> UB  -> UR    (0->1->2->3->0)
+// U: corners 0->1->2->3->0, edges 0->1->2->3->0
 constexpr MoveTable MOVE_U = {
     {3,0,1,2,4,5,6,7},
     {0,0,0,0,0,0,0,0},
@@ -60,8 +43,7 @@ constexpr MoveTable MOVE_U = {
     {0,0,0,0,0,0,0,0,0,0,0,0},
 };
 
-// D (CW from bottom): corners DFR -> DRB -> DBL -> DLF -> DFR  (4->7->6->5->4)
-//                     edges   DR  -> DB  -> DL  -> DF  -> DR    (4->7->6->5->4)
+// D: corners 4->7->6->5->4, edges 4->7->6->5->4
 constexpr MoveTable MOVE_D = {
     {0,1,2,3,5,6,7,4},
     {0,0,0,0,0,0,0,0},
@@ -69,10 +51,7 @@ constexpr MoveTable MOVE_D = {
     {0,0,0,0,0,0,0,0,0,0,0,0},
 };
 
-// R (CW from right): corners DFR -> URF -> UBR -> DRB -> DFR  (4->0->3->7->4)
-//                    edges   FR  -> UR  -> BR  -> DR  -> FR    (8->0->11->4->8)
-//    Corner twists (our convention): URF +2, UBR +1, DFR +1, DRB +2 (sum 6 = 0 mod 3).
-//    R does not flip edges (only F/B do).
+// R: corners 4->0->3->7->4, edges 8->0->11->4->8
 constexpr MoveTable MOVE_R = {
     {4,1,2,0,7,5,6,3},
     {2,0,0,1,1,0,0,2},
@@ -80,10 +59,7 @@ constexpr MoveTable MOVE_R = {
     {0,0,0,0,0,0,0,0,0,0,0,0},
 };
 
-// L (CW from left): corners DLF -> DBL -> ULB -> UFL -> DLF  (5->6->2->1->5)
-//                   edges   FL  -> DL  -> BL  -> UL  -> FL    (9->6->10->2->9)
-//    Corner twists (our convention): UFL +1, ULB +2, DLF +2, DBL +1 (sum 6 = 0 mod 3).
-//    L does not flip edges.
+// L: corners 5->6->2->1->5, edges 9->6->10->2->9
 constexpr MoveTable MOVE_L = {
     {0,2,6,3,4,1,5,7},
     {0,1,2,0,0,2,1,0},
@@ -91,10 +67,7 @@ constexpr MoveTable MOVE_L = {
     {0,0,0,0,0,0,0,0,0,0,0,0},
 };
 
-// F (CW from front): corners URF -> DFR -> DLF -> UFL -> URF  (0->4->5->1->0)
-//                    edges   UF  -> FR  -> DF  -> FL  -> UF    (1->8->5->9->1)
-//    Corner twists (our convention): URF +1, UFL +2, DFR +2, DLF +1 (sum 6 = 0 mod 3).
-//    Edge orientations: all four affected edges flip (slots 1,5,8,9).
+// F: corners 0->4->5->1->0, edges 1->8->5->9->1 (all four affected edges flip)
 constexpr MoveTable MOVE_F = {
     {1,5,2,3,0,4,6,7},
     {1,2,0,0,2,1,0,0},
@@ -102,10 +75,7 @@ constexpr MoveTable MOVE_F = {
     {0,1,0,0,0,1,0,0,1,1,0,0},
 };
 
-// B (CW from back): corners UBR -> ULB -> DBL -> DRB -> UBR  (3->2->6->7->3)
-//                   edges   UB  -> BL  -> DB  -> BR  -> UB    (3->10->7->11->3)
-//    Corner twists (our convention): ULB +1, UBR +2, DBL +2, DRB +1 (sum 6 = 0 mod 3).
-//    Edge orientations: all four affected edges flip (slots 3,7,10,11).
+// B: corners 3->2->6->7->3, edges 3->10->7->11->3 (all four affected edges flip)
 constexpr MoveTable MOVE_B = {
     {0,1,3,7,4,5,2,6},
     {0,0,1,2,0,0,2,1},
@@ -132,7 +102,7 @@ CubeState apply_table(const CubeState& in, const MoveTable& t) {
     return out;
 }
 
-// Compose two move tables: first apply `a`, then apply `b`.
+// compose: first apply `a`, then `b`
 MoveTable compose(const MoveTable& a, const MoveTable& b) {
     MoveTable r{};
     for (uint8_t i = 0; i < NUM_CORNERS; ++i) {
@@ -156,8 +126,8 @@ std::array<MoveTable, NUM_MOVES> build_all_move_tables() {
         const MoveTable& q = QUARTER_TURNS[face];
         MoveTable q2 = compose(q, q);
         MoveTable q3 = compose(q2, q);
-        tables[face * 3 + 0] = q;    // quarter clockwise
-        tables[face * 3 + 1] = q3;   // prime = three quarter turns
+        tables[face * 3 + 0] = q;
+        tables[face * 3 + 1] = q3;   // prime = 3 quarter turns
         tables[face * 3 + 2] = q2;   // half turn
     }
     return tables;

@@ -6,8 +6,7 @@ namespace cube {
 
 namespace {
 
-// Face index of a move: 0=U, 1=D, 2=R, 3=L, 4=F, 5=B.
-// Matches the ordering inside the Move enum: 3 moves per face.
+// 0=U 1=D 2=R 3=L 4=F 5=B, matching the Move enum (3 variants per face)
 uint8_t face_of(Move m) {
     return static_cast<uint8_t>(m) / 3;
 }
@@ -23,7 +22,7 @@ std::vector<Move> random_scramble(int length, uint64_t seed) {
     std::uniform_int_distribution<int> face_dist(0, 5);
     std::uniform_int_distribution<int> variant_dist(0, 2);
 
-    uint8_t last_face = 0xFF;  // sentinel: no previous move
+    uint8_t last_face = 0xFF;  // sentinel for "no previous move"
     for (int i = 0; i < length; ++i) {
         int face;
         do {

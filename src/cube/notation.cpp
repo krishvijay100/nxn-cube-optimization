@@ -40,7 +40,7 @@ std::optional<Move> parse_move(std::string_view s) {
     auto face = face_index(s[0]);
     if (!face) return std::nullopt;
 
-    int variant = 0;  // 0 = quarter, 1 = prime, 2 = half
+    int variant = 0;  // 0=quarter, 1=prime, 2=half
     if (s.size() == 2) {
         if      (s[1] == '\'') variant = 1;
         else if (s[1] == '2')  variant = 2;

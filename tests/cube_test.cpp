@@ -169,8 +169,7 @@ bool states_match(const cube::CubeState& a, const cube::CubeState& b) {
 
 }  // namespace
 
-// The derived prime tables (built by compose() inside cube.cpp) must agree with
-// three direct applications of the quarter turn.
+// derived prime tables (from compose()) must match 3 direct quarter turns
 TEST(Moves, PrimeEqualsThreeQuarterTurns) {
     for (size_t i = 0; i < 6; ++i) {
         cube::CubeState a = cube::solved_cube();
@@ -184,8 +183,7 @@ TEST(Moves, PrimeEqualsThreeQuarterTurns) {
     }
 }
 
-// Parsing the notation for a move and applying it must match applying the Move
-// enum directly. Locks the string<->enum contract end-to-end.
+// locks the string<->enum contract end-to-end
 TEST(Notation, ParsedMoveMatchesEnumApplication) {
     for (cube::Move m : ALL_MOVES) {
         auto parsed = cube::parse_move(cube::to_string(m));
@@ -205,9 +203,8 @@ TEST(Notation, ParsedMoveMatchesEnumApplication) {
 
 namespace {
 
-// A fixed, deliberately varied scramble that touches every face in both
-// directions and with half turns. Used by all invariant tests so that any
-// failure points at the same reproducible state.
+// touches every face in both directions plus half turns; shared across all
+// invariant tests so any failure points at one reproducible state
 constexpr cube::Move SCRAMBLE[] = {
     cube::Move::R,  cube::Move::U,  cube::Move::F2, cube::Move::D_prime,
     cube::Move::L,  cube::Move::B,  cube::Move::U2, cube::Move::R_prime,
@@ -327,21 +324,11 @@ TEST(Notation, ParsedSexyMoveSolvesAfterSixReps) {
     EXPECT_TRUE(cube::is_solved(c));
 }
 
-// "Sune" — R U R' U R U2 R'. Ground truth cross-verified against the pycuber
-// library and an independent from-scratch simulator, under this engine's slot
-// numbering and orientation convention.
-//
-// NOTE: contrary to a common belief, on a FULLY SOLVED cube this sequence is NOT
-// a pure 3-corner cycle leaving edges untouched. It is a 4-corner cycle plus a
-// 3-edge cycle. (The "pure corner orientation" intuition only holds when the
-// U-layer is already permuted, as during the OLL solving stage.)
-//
-// Verified resulting state (slot i holds piece originally from slot j):
-//   corner_positions = {2,3,0,1, 4,5,6,7}   (4-cycle on slots 0,1,2,3)
-//   corner_orientations = {1,1,1,0, 0,0,0,0}
-//   edge_positions   = {2,1,3,0, 4,5,6,7,8,9,10,11}  (3-cycle on edges 0,2,3)
-//   edge_orientations = all 0
-//   order = 6
+// Sune (R U R' U R U2 R'): 4-corner cycle + 3-edge cycle from solved, order 6
+// cross-verified against pycuber and a from-scratch simulator
+//   corner_positions    = {2,3,0,1,4,5,6,7}
+//   corner_orientations = {1,1,1,0,0,0,0,0}
+//   edge_positions      = {2,1,3,0,4,5,6,7,8,9,10,11}
 TEST(KnownPositions, SuneProducesExpectedState) {
     auto seq = cube::parse_sequence("R U R' U R U2 R'");
     ASSERT_TRUE(seq.has_value());
@@ -366,7 +353,7 @@ TEST(KnownPositions, SuneProducesExpectedState) {
             << "sune edge_orientations mismatch at slot " << static_cast<int>(i);
     }
 
-    // Order is 6: applying sune six times returns to solved.
+    // 6 reps returns to solved
     cube::CubeState c2 = cube::solved_cube();
     int order = 0;
     for (int rep = 1; rep <= 12; ++rep) {
@@ -376,15 +363,8 @@ TEST(KnownPositions, SuneProducesExpectedState) {
     EXPECT_EQ(order, 6) << "sune should have order 6";
 }
 
-// "T permutation" — R U R' U' R' F R2 U' R' U' R U R' F'. A pure double
-// transposition (order 2): swaps two adjacent U-layer corners and two U-layer
-// edges, with no orientation changes. Ground truth cross-verified against the
-// pycuber library.
-//
-// Verified resulting state:
-//   corner swap URF(0) <-> UBR(3); all other corners fixed; no twists.
-//   edge swap   UR(0)  <-> UL(2);  all other edges fixed; no flips.
-//   order = 2.
+// T-perm: pure double transposition, order 2, verified against pycuber
+// corner swap URF(0) <-> UBR(3), edge swap UR(0) <-> UL(2), no ori changes
 TEST(KnownPositions, TPermProducesExpectedState) {
     auto seq = cube::parse_sequence("R U R' U' R' F R2 U' R' U' R U R' F'");
     ASSERT_TRUE(seq.has_value());
@@ -392,33 +372,29 @@ TEST(KnownPositions, TPermProducesExpectedState) {
     cube::CubeState c = cube::solved_cube();
     for (cube::Move m : *seq) cube::apply_move(c, m);
 
-    // Corner swap URF(0) <-> UBR(3).
     EXPECT_EQ(c.corner_positions[0], 3) << "T-perm: URF slot should hold UBR piece";
     EXPECT_EQ(c.corner_positions[3], 0) << "T-perm: UBR slot should hold URF piece";
     for (uint8_t i : {1, 2, 4, 5, 6, 7}) {
         EXPECT_EQ(c.corner_positions[i], i)
             << "T-perm should not move corner slot " << static_cast<int>(i);
     }
-    // No corner twists anywhere.
     for (uint8_t i = 0; i < cube::NUM_CORNERS; ++i) {
         EXPECT_EQ(c.corner_orientations[i], 0)
             << "T-perm should not twist corner slot " << static_cast<int>(i);
     }
 
-    // Edge swap UR(0) <-> UL(2).
     EXPECT_EQ(c.edge_positions[0], 2) << "T-perm: UR slot should hold UL piece";
     EXPECT_EQ(c.edge_positions[2], 0) << "T-perm: UL slot should hold UR piece";
     for (uint8_t i : {1, 3, 4, 5, 6, 7, 8, 9, 10, 11}) {
         EXPECT_EQ(c.edge_positions[i], i)
             << "T-perm should not move edge slot " << static_cast<int>(i);
     }
-    // No edge flips anywhere.
     for (uint8_t i = 0; i < cube::NUM_EDGES; ++i) {
         EXPECT_EQ(c.edge_orientations[i], 0)
             << "T-perm should not flip edge slot " << static_cast<int>(i);
     }
 
-    // Order 2: applying T-perm twice returns to solved.
+    // 2 reps returns to solved
     cube::CubeState c2 = cube::solved_cube();
     for (int rep = 0; rep < 2; ++rep) {
         for (cube::Move m : *seq) cube::apply_move(c2, m);
@@ -426,10 +402,8 @@ TEST(KnownPositions, TPermProducesExpectedState) {
     EXPECT_TRUE(cube::is_solved(c2)) << "T-perm^2 should return to solved";
 }
 
-// "Ua permutation" — R U' R U R U R U' R' U' R2. A pure 3-edge cycle of the
-// U-layer edges (corners untouched, no orientation changes), order 3. Ground
-// truth cross-verified against the pycuber library.
-//   edge_positions = {1,2,0,3, ...}  (UR<-UF, UF<-UL, UL<-UR : 3-cycle on 0,1,2)
+// Ua-perm: pure 3-edge cycle on U-layer, order 3, verified against pycuber
+//   edge_positions = {1,2,0,3, ...} (3-cycle on edges 0,1,2), corners untouched
 TEST(KnownPositions, UaPermProducesExpectedState) {
     auto seq = cube::parse_sequence("R U' R U R U R U' R' U' R2");
     ASSERT_TRUE(seq.has_value());
@@ -444,14 +418,13 @@ TEST(KnownPositions, UaPermProducesExpectedState) {
         EXPECT_EQ(c.edge_orientations[i], 0)
             << "Ua-perm edge_orientations mismatch at slot " << static_cast<int>(i);
     }
-    // Corners untouched.
     for (uint8_t i = 0; i < cube::NUM_CORNERS; ++i) {
         EXPECT_EQ(c.corner_positions[i], i)
             << "Ua-perm moved corner slot " << static_cast<int>(i);
         EXPECT_EQ(c.corner_orientations[i], 0)
             << "Ua-perm twisted corner slot " << static_cast<int>(i);
     }
-    // Order 3.
+    // 3 reps returns to solved
     cube::CubeState c2 = cube::solved_cube();
     int order = 0;
     for (int rep = 1; rep <= 6; ++rep) {
@@ -461,10 +434,8 @@ TEST(KnownPositions, UaPermProducesExpectedState) {
     EXPECT_EQ(order, 3) << "Ua-perm should have order 3";
 }
 
-// "Y permutation" — F R U' R' U' R U R' F' R U R' U' R' F R F'. Swaps two
-// adjacent corners and two adjacent edges, order 2. Ground truth cross-verified
-// against the pycuber library.
-//   corner swap URF(0) <-> ULB(2); edge swap UL(2) <-> UB(3); no orientation changes.
+// Y-perm: corner swap URF(0)<->ULB(2), edge swap UL(2)<->UB(3), order 2
+// verified against pycuber. no orientation changes
 TEST(KnownPositions, YPermProducesExpectedState) {
     auto seq = cube::parse_sequence("F R U' R' U' R U R' F' R U R' U' R' F R F'");
     ASSERT_TRUE(seq.has_value());
@@ -486,7 +457,7 @@ TEST(KnownPositions, YPermProducesExpectedState) {
         EXPECT_EQ(c.edge_orientations[i], 0)
             << "Y-perm edge_orientations mismatch at slot " << static_cast<int>(i);
     }
-    // Order 2.
+    // 2 reps returns to solved
     cube::CubeState c2 = cube::solved_cube();
     for (int rep = 0; rep < 2; ++rep) {
         for (cube::Move m : *seq) cube::apply_move(c2, m);

@@ -14,7 +14,7 @@ cube::Move invert(cube::Move m) {
     uint8_t v = static_cast<uint8_t>(m);
     uint8_t face = v / 3;
     uint8_t variant = v % 3;
-    // 0 (quarter) <-> 1 (prime); 2 (half) is its own inverse.
+    // quarter<->prime, half is its own inverse
     uint8_t inv_variant = variant == 0 ? 1 : (variant == 1 ? 0 : 2);
     return static_cast<cube::Move>(face * 3 + inv_variant);
 }
@@ -100,8 +100,7 @@ TEST(Scramble, NoConsecutiveSameFaceAcrossManySeeds) {
     }
 }
 
-// Across enough total moves, every one of the 18 moves must appear at least
-// once. Catches bugs like "a face or variant is unreachable from the RNG."
+// catches "a face or variant is unreachable from the RNG" bugs
 TEST(Scramble, AllMovesAppearAcrossManyScrambles) {
     std::array<int, 18> counts{};
     for (uint64_t seed = 1; seed <= 50; ++seed) {

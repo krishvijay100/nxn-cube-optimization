@@ -9,9 +9,7 @@ namespace cube {
 
 constexpr int DEFAULT_SCRAMBLE_LENGTH = 25;
 
-// Generates a random scramble of `length` moves using `seed` as the RNG seed.
-// Same seed + same length always produces the same sequence.
-// Guarantees no two consecutive moves are on the same face.
+// deterministic given (length, seed). no two consecutive moves share a face
 std::vector<Move> random_scramble(int length, uint64_t seed);
 
 }

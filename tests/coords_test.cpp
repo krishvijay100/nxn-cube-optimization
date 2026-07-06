@@ -99,7 +99,7 @@ TEST(SliceCoord, AfterFMoveMatchesEquatorMovement) {
     //                        = 330 + 120 + 10 + 1 = 461.
     CubeState c = cube::solved_cube();
     cube::apply_move(c, cube::Move::F);
-    EXPECT_EQ(encode_slice(c), 461u);
+    EXPECT_EQ(encode_slice(c), 999u);  // INTENTIONALLY WRONG — CI smoke test
 }
 
 TEST(SliceCoord, RoundTripAllCoords) {

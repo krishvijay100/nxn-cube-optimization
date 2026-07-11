@@ -51,6 +51,12 @@ target_compile_options(solver PRIVATE -Wall -Wextra -Wpedantic)
 add_executable(nxn_cube app/main.cpp)
 target_link_libraries(nxn_cube PRIVATE cube)
 
+# profiling harness — hot loop for attaching Instruments/perf
+add_executable(profile_solve tools/profile_solve.cpp)
+target_link_libraries(profile_solve PRIVATE cube solver)
+# keep symbols in the release binary so the profiler can name functions
+target_compile_options(profile_solve PRIVATE -g)
+
 enable_testing()
 add_subdirectory(tests)
 add_subdirectory(benchmarks)

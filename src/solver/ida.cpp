@@ -52,9 +52,16 @@ inline Phase1Node phase1_apply(const Phase1Ctx& c, Phase1Node n, int m) {
     };
 }
 
-struct Phase2Node {
-    Coord cp, ep, sp;
-};
+// phase 2 state packed into one uint64_t so it fits in a single register through
+// the DFS recursion. layout: cp:16 | ep:16 | sp:5 | unused:27
+using Phase2Node = uint64_t;
+
+inline Phase2Node pack_phase2(Coord cp, Coord ep, Coord sp) {
+    return uint64_t(cp) | (uint64_t(ep) << 16) | (uint64_t(sp) << 32);
+}
+inline Coord phase2_cp(Phase2Node n) { return Coord(n & 0xFFFF); }
+inline Coord phase2_ep(Phase2Node n) { return Coord((n >> 16) & 0xFFFF); }
+inline Coord phase2_sp(Phase2Node n) { return Coord((n >> 32) & 0x1F); }
 
 struct Phase2Ctx {
     const CornerPermTable& cp_moves;
@@ -65,19 +72,19 @@ struct Phase2Ctx {
 };
 
 inline int phase2_h(const Phase2Ctx& c, Phase2Node n) {
-    return std::max<int>(c.cp_sp_prune[n.cp][n.sp], c.ep_sp_prune[n.ep][n.sp]);
+    Coord sp = phase2_sp(n);
+    return std::max<int>(c.cp_sp_prune[phase2_cp(n)][sp], c.ep_sp_prune[phase2_ep(n)][sp]);
 }
 
 inline bool phase2_is_goal(Phase2Node n) {
-    return n.cp == 0 && n.ep == 0 && n.sp == 0;
+    return n == 0;
 }
 
 inline Phase2Node phase2_apply(const Phase2Ctx& c, Phase2Node n, int i) {
-    return {
-        c.cp_moves[n.cp][i],
-        c.ep_moves[n.ep][i],
-        c.sp_moves[n.sp][i],
-    };
+    return pack_phase2(
+        c.cp_moves[phase2_cp(n)][i],
+        c.ep_moves[phase2_ep(n)][i],
+        c.sp_moves[phase2_sp(n)][i]);
 }
 
 // bool-returning DFS: pushes onto `path` descending, pops on backtrack.
@@ -176,11 +183,10 @@ std::vector<Move> ida_phase2(const CubeState& state) {
         corner_perm_slice_perm_pruning(),
         edge_perm_slice_perm_pruning(),
     };
-    Phase2Node start = {
+    Phase2Node start = pack_phase2(
         encode_corner_perm(state),
         encode_edge_perm_ud(state),
-        encode_slice_perm(state),
-    };
+        encode_slice_perm(state));
     if (phase2_is_goal(start)) return {};
 
     std::vector<int> path;

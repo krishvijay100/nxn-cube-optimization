@@ -27,7 +27,27 @@ Throughput implication: ~472 solves/sec single-threaded.
 |---|---|---|---|
 | baseline | 2.12 ms | 1.00x | |
 | cache table refs in DFS via Ctx | 1.31 ms | **1.62x** | hoist 5 static-local getters out of the recursion |
+| bitboard-packed phase 2 state | 1.31 ms | 1.62x | no measurable delta — compiler was already coalescing the 12-byte struct into registers under -O3. kept for code clarity + as an enabler if a future change needs a smaller state footprint |
 
+## Rejected permanently — measured twice, doesn't help in this codebase
+
+- **Fixed-size `Path` (std::array<uint8_t, 32> + size counter, replacing std::vector<int>).** Regressed BM_Solve by ~6% on both attempts:
+  - **First pass (against Ctx-only baseline):** 1.31 → 1.39 ms (-6%).
+  - **Retry on top of bitboard-packed state:** 1.31 → 1.40 ms (-6%).
+  - The bitboard change was expected to free cache-line budget for the 33-byte stack buffer, but the regression was identical, so that hypothesis was falsified. Root cause stands: libc++'s `std::vector<int>` `push_back`/`pop_back` is already inlining to essentially optimal code under `-O3`, and the fixed-size stack object costs more than it saves. Not retrying again.
+
+## Rejected on first pass — flagged for retry after symmetry compression
+
+- **Aggressive move ordering (sort candidates by heuristic before recursing).** Tried two variants:
+  - Sort at every DFS node: regressed BM_Solve to ~2.00 ms (-53%). ~7 extra apply+h computes per node, sort overhead, and *no* meaningful reduction in solve node count (avg solution length unchanged at 23.20 vs baseline's 23.17).
+  - Sort only at shallow depths (g < 3): regressed BM_Solve to ~1.44 ms (-10%). Less overhead but still net negative and no node-count reduction.
+  - Root cause: our `max(corner_perm × slice_perm, edge_perm × slice_perm)` heuristic clusters tightly across candidates at each depth — most siblings tie or differ by 1 — so the sort barely changes iteration order.
+  - **Retry rationale:** symmetry-compressed pruning tables typically produce a more discriminating heuristic (less clustering across sibling h-values), which is exactly the missing ingredient. Retry once symmetry compression lands.
+
+## Planned next
+
+1. **Symmetry-compressed pruning tables.** Exploit the 48-fold symmetry group; tables drop from ~4 MB to ~85 KB (L1-resident). Also expected to broaden the heuristic's discrimination, which unblocks the move-ordering retry. ~300-500 LOC.
+2. **Retry move ordering** (see above).
 ## Progress — throughput under concurrency (BM_SolveThroughput)
 
 Reentrant solver, no shared writable state. Numbers from 3s min-time runs

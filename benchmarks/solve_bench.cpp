@@ -94,3 +94,28 @@ static void BM_IdaPhase2(benchmark::State& state) {
     state.SetItemsProcessed(state.iterations());
 }
 BENCHMARK(BM_IdaPhase2)->Unit(benchmark::kMillisecond);
+
+// throughput under concurrency: same body as BM_Solve but run by N threads
+// simultaneously. google benchmark reports items_per_second across all threads,
+// so BM_SolveThroughput/14 is our best proxy for a saturated 14-core service.
+static void BM_SolveThroughput(benchmark::State& state) {
+    warm();
+    // give every thread its own scramble pool so threads never share input
+    auto scrambles = make_scrambles(64, 25);
+    size_t i = static_cast<size_t>(state.thread_index()) * 7;   // stagger start
+    for (auto _ : state) {
+        auto sol = cube::solver::solve(scrambles[i % scrambles.size()]);
+        benchmark::DoNotOptimize(sol);
+        ++i;
+    }
+    state.SetItemsProcessed(state.iterations());
+    // aggregate rate across all threads. `iterations() * threads()` gives total
+    // solves; kIsRate divides by real time. compute here rather than post-hoc.
+    state.counters["solves_per_sec_total"] = benchmark::Counter(
+        double(state.iterations()) * double(state.threads()),
+        benchmark::Counter::kIsRate);
+}
+BENCHMARK(BM_SolveThroughput)
+    ->Unit(benchmark::kMillisecond)
+    ->ThreadRange(1, 16)
+    ->UseRealTime();

@@ -21,12 +21,28 @@ cmake --build build --target cube_benchmarks
 
 Throughput implication: ~472 solves/sec single-threaded.
 
-## Progress
+## Progress — per-solve latency
 
 | optimization | BM_Solve | speedup vs baseline | notes |
 |---|---|---|---|
 | baseline | 2.12 ms | 1.00x | |
-| cache table refs in DFS (target 1) | 1.31 ms | **1.62x** | hoist 5 static-local getters out of the recursion via a Ctx struct |
+| cache table refs in DFS via Ctx | 1.31 ms | **1.62x** | hoist 5 static-local getters out of the recursion |
+
+## Progress — throughput under concurrency (BM_SolveThroughput)
+
+Reentrant solver, no shared writable state. Numbers from 3s min-time runs
+per thread count.
+
+| threads | per-thread latency | total solves/sec | scaling vs 1 thread |
+|---|---|---|---|
+| 1  | 1.34 ms | 745  | 1.00x |
+| 2  | 1.36 ms | 1,470 | 1.97x |
+| 4  | 1.37 ms | 2,923 | 3.92x |
+| 8  | 1.39 ms | 5,749 | 7.72x |
+| 16 | 2.18 ms | 7,337 | 9.84x (14 cores — 16 oversubscribes) |
+
+near-linear scaling through the physical core count. per-thread latency
+barely moves as threads grow — the solver is not fighting any shared state.
 
 ## Where the time goes
 

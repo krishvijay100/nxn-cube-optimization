@@ -13,13 +13,20 @@ cmake --build build --target cube_benchmarks
 
 ## Numbers to beat
 
-| benchmark | time |
-|---|---|
-| BM_Solve | **2.12 ms / solve** — avg 23.2 moves (9.5 phase 1 + 13.7 phase 2) |
-| BM_IdaPhase1 | 0.096 ms |
-| BM_IdaPhase2 | 2.08 ms |
+| benchmark | baseline | notes |
+|---|---|---|
+| BM_Solve | **2.12 ms / solve** | avg 23.2 moves (9.5 phase 1 + 13.7 phase 2) |
+| BM_IdaPhase1 | 0.096 ms | |
+| BM_IdaPhase2 | 2.08 ms | |
 
 Throughput implication: ~472 solves/sec single-threaded.
+
+## Progress
+
+| optimization | BM_Solve | speedup vs baseline | notes |
+|---|---|---|---|
+| baseline | 2.12 ms | 1.00x | |
+| cache table refs in DFS (target 1) | 1.31 ms | **1.62x** | hoist 5 static-local getters out of the recursion via a Ctx struct |
 
 ## Where the time goes
 

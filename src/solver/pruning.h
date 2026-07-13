@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <vector>
 
 #include "solver/coords.h"
 #include "solver/move_tables.h"
@@ -27,5 +28,24 @@ using EdgePermSlicePermTable = std::array<std::array<Distance, SLICE_PERM_COORDS
 
 const CornerPermSlicePermTable& corner_perm_slice_perm_pruning();
 const EdgePermSlicePermTable&   edge_perm_slice_perm_pruning();
+
+// symmetry-compressed phase-2 pruning tables
+
+using SymClassIndex = uint32_t;
+
+struct SymPhase2CornerPruning {
+    // class_of[cp][sp] -> class id in [0, num_classes)
+    std::array<std::array<SymClassIndex, SLICE_PERM_COORDS>, CORNER_PERM_COORDS> class_of;
+    // dist[class_id] -> distance to goal for any representative in that class
+    std::vector<Distance> dist;
+};
+
+struct SymPhase2EdgePruning {
+    std::array<std::array<SymClassIndex, SLICE_PERM_COORDS>, EDGE_PERM_UD_COORDS> class_of;
+    std::vector<Distance> dist;
+};
+
+const SymPhase2CornerPruning& sym_corner_perm_slice_perm_pruning();
+const SymPhase2EdgePruning&   sym_edge_perm_slice_perm_pruning();
 
 }

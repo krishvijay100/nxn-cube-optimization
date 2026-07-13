@@ -6,6 +6,8 @@ add_executable(cube_tests
     coords_test.cpp
     move_tables_test.cpp
     pruning_test.cpp
+    symmetry_test.cpp
+    sym_pruning_test.cpp
     ida_test.cpp
     ida_thread_safety_test.cpp
 )

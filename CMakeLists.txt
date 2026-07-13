@@ -42,6 +42,7 @@ add_library(solver
     src/solver/coords.cpp
     src/solver/move_tables.cpp
     src/solver/pruning.cpp
+    src/solver/symmetry.cpp
     src/solver/ida.cpp
 )
 target_include_directories(solver PUBLIC src)

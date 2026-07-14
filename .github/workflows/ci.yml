@@ -25,5 +25,11 @@ jobs:
       - name: Build
         run: cmake --build build --target cube_tests nxn_cube_py
 
-      - name: Run tests
+      - name: Run C++ tests + python bindings test
         run: ctest --test-dir build --output-on-failure
+
+      - name: Install FastAPI service deps
+        run: pip install -e "service[dev]"
+
+      - name: Run FastAPI service tests
+        run: PYTHONPATH="$PWD/build/bindings" pytest service/tests -v

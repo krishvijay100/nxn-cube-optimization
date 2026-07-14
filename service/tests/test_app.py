@@ -48,3 +48,19 @@ def test_solve_rejects_oversized_scramble():
 def test_solve_rejects_wrong_shape():
     r = client.post("/solve", json={"scramble": "R U R'"})   # string, not list
     assert r.status_code == 422
+
+
+def test_scramble_returns_valid_moves():
+    r = client.get("/scramble?length=20")
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body["scramble"]) == 20
+    # feed the returned scramble straight to /solve to prove it round-trips
+    r2 = client.post("/solve", json={"scramble": body["scramble"]})
+    assert r2.status_code == 200
+    assert nc.verify(body["scramble"], r2.json()["solution"])
+
+
+def test_scramble_rejects_bad_length():
+    assert client.get("/scramble?length=0").status_code == 422
+    assert client.get("/scramble?length=41").status_code == 422

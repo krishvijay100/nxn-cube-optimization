@@ -25,6 +25,10 @@ __pycache__/
 .venv/
 *.egg-info/
 
+node_modules/
+dist/
+*.tsbuildinfo
+
 ROADMAP.md
 
 benchmarks/*.md

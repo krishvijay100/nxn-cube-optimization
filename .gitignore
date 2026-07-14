@@ -19,4 +19,7 @@ compile_commands.json
 *.dll
 *.exe
 
+__pycache__/
+*.pyc
+
 ROADMAP.md

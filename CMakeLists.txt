@@ -4,6 +4,7 @@ project(nxn_cube_optimization LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
@@ -29,6 +30,14 @@ FetchContent_Declare(
 set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
 set(BENCHMARK_ENABLE_GTEST_TESTS OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(benchmark)
+
+# pybind11 for exposing the c++ solver to python (for fastapi service)
+FetchContent_Declare(
+    pybind11
+    GIT_REPOSITORY https://github.com/pybind/pybind11.git
+    GIT_TAG v2.13.6
+)
+FetchContent_MakeAvailable(pybind11)
 
 add_library(cube
     src/cube/cube.cpp
@@ -61,3 +70,4 @@ target_compile_options(profile_solve PRIVATE -g)
 enable_testing()
 add_subdirectory(tests)
 add_subdirectory(benchmarks)
+add_subdirectory(bindings)

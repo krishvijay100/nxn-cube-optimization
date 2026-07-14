@@ -14,11 +14,16 @@ jobs:
       - name: Install Ninja
         run: sudo apt-get update && sudo apt-get install -y ninja-build
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - name: Configure
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
-        run: cmake --build build --target cube_tests
+        run: cmake --build build --target cube_tests nxn_cube_py
 
       - name: Run tests
         run: ctest --test-dir build --output-on-failure

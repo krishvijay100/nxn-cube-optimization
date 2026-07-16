@@ -10,8 +10,13 @@ namespace cube::solver {
 // input or if the internal depth cap is hit (never expected for valid states)
 std::vector<Move> solve(const CubeState& scramble);
 
+// same contract as solve() but fans out the phase 2 search across num_threads
+// worker threads at each ID iteration's root
+std::vector<Move> solve_parallel(const CubeState& scramble, int num_threads);
+
 // individual phase solvers, exposed so tests can exercise them in isolation
 std::vector<Move> ida_phase1(const CubeState& state);
 std::vector<Move> ida_phase2(const CubeState& state);
+std::vector<Move> ida_phase2_parallel(const CubeState& state, int num_threads);
 
 }

@@ -28,6 +28,21 @@ Throughput implication: ~472 solves/sec single-threaded.
 | baseline | 2.12 ms | 1.00x | |
 | cache table refs in DFS via Ctx | 1.31 ms | **1.62x** | hoist 5 static-local getters out of the recursion |
 | bitboard-packed phase 2 state | 1.31 ms | 1.62x | no measurable delta — compiler was already coalescing the 12-byte struct into registers under -O3. kept for code clarity + as an enabler if a future change needs a smaller state footprint |
+| **intra-solve parallel phase 2** (8 threads) | **0.575 ms** | **3.69x** | lock-free root-level fan-out with atomic cancellation. avg solution length unchanged at 23.17 (optimality preserved). see sweep below. |
+
+### Intra-solve parallel sweep — `BM_SolveParallel/N`
+
+Same scramble corpus as `BM_Solve`, 8s min-time, 3 repetitions, aggregates-only.
+
+| threads | latency | speedup vs 1-thread | notes |
+|---:|---:|---:|---|
+| 1 (fallback to serial) | 1.31 ms | 1.00x | opt-in `num_threads=1` short-circuits to `solve()` |
+| 2 | 0.90 ms | 1.46x | |
+| 4 | 0.64 ms | 2.05x | |
+| **8** | **0.575 ms** | **2.28x** | **headline — plateaus here as the ~10 legal root moves are exhausted** |
+| 10 | 0.582 ms | 2.25x | matching or slightly worse than 8 — extra workers duplicate work rather than parallelize |
+
+correctness: `IdaParallel.MatchesSerialLength` asserts `solve_parallel(x).size() == solve(x).size()` over 30 random scrambles at 25 moves each, and the `avg_moves` counter in the benchmark holds at 23.17 across every thread count. `IdaParallel.ConcurrentParallelSolvesAllSucceed` further stress-tests 4 outer threads × 25 solves each × 4 inner workers to prove the driver has no shared writable state across invocations.
 
 ## Rejected permanently — measured twice, doesn't help in this codebase
 

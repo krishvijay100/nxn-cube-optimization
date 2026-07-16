@@ -2,8 +2,12 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <limits>
+#include <mutex>
+#include <thread>
+#include <vector>
 
 #include "solver/coords.h"
 #include "solver/move_tables.h"
@@ -141,6 +145,37 @@ bool phase2_dfs(const Phase2Ctx& c, Phase2Node n, int g, int bound, int& next_bo
     return false;
 }
 
+// same DFS but bails out if the shared stop flag is set; checked per node with relaxed load
+bool phase2_dfs_cancel(const Phase2Ctx& c, Phase2Node n, int g, int bound, int& next_bound,
+                       int last_face, int last_axis_partner_face, std::vector<int>& path,
+                       const std::atomic<bool>& stop)
+{
+    if (stop.load(std::memory_order_relaxed)) return false;
+
+    int f = g + phase2_h(c, n);
+    if (f > bound) {
+        if (f < next_bound) next_bound = f;
+        return false;
+    }
+    if (phase2_is_goal(n)) return true;
+
+    for (int i = 0; i < NUM_G1_MOVES; ++i) {
+        int face = face_of(static_cast<int>(G1_MOVES[i]));
+        if (face == last_face) continue;
+        if (same_axis(face, last_face) && face < last_face) continue;
+        if (face == last_axis_partner_face) continue;
+
+        Phase2Node next = phase2_apply(c, n, i);
+        int new_partner = same_axis(face, last_face) ? last_face : -1;
+        path.push_back(i);
+        if (phase2_dfs_cancel(c, next, g + 1, bound, next_bound, face, new_partner, path, stop)) {
+            return true;
+        }
+        path.pop_back();
+    }
+    return false;
+}
+
 }  // namespace
 
 std::vector<Move> ida_phase1(const CubeState& state) {
@@ -213,6 +248,96 @@ std::vector<Move> solve(const CubeState& scramble) {
     for (Move m : solution) apply_move(intermediate, m);
 
     std::vector<Move> p2 = ida_phase2(intermediate);
+    solution.insert(solution.end(), p2.begin(), p2.end());
+    return solution;
+}
+
+// parallel phase 2: iterative-deepening loop is unchanged, but for each bound fan out one worker per legal root move
+std::vector<Move> ida_phase2_parallel(const CubeState& state, int num_threads) {
+    if (num_threads <= 1) return ida_phase2(state);
+
+    const Phase2Ctx ctx = {
+        corner_perm_move_table(),
+        edge_perm_ud_move_table(),
+        slice_perm_move_table(),
+        corner_perm_slice_perm_pruning(),
+        edge_perm_slice_perm_pruning(),
+    };
+    Phase2Node start = pack_phase2(
+        encode_corner_perm(state),
+        encode_edge_perm_ud(state),
+        encode_slice_perm(state));
+    if (phase2_is_goal(start)) return {};
+
+    // partition the NUM_G1_MOVES legal root moves round-robin across num_threads workers
+    int workers = std::min<int>(num_threads, NUM_G1_MOVES);
+
+    int bound = phase2_h(ctx, start);
+    while (bound <= MAX_DEPTH_PHASE2) {
+        std::atomic<bool> stop{false};
+        std::atomic<int>  next_bound_atomic{SEARCH_FAILED};
+        std::mutex        result_mu;
+        std::vector<int>  best_path;   // guarded by result_mu
+
+        auto worker = [&](int worker_id) {
+            std::vector<int> local_path;
+            local_path.reserve(32);
+            int local_next_bound = SEARCH_FAILED;
+
+            for (int i = worker_id; i < NUM_G1_MOVES; i += workers) {
+                if (stop.load(std::memory_order_relaxed)) return;
+
+                int face = face_of(static_cast<int>(G1_MOVES[i]));
+                Phase2Node next = phase2_apply(ctx, start, i);
+                local_path.clear();
+                local_path.push_back(i);
+                int new_partner = -1;   // last_face was -1 at true root
+
+                if (phase2_dfs_cancel(ctx, next, 1, bound, local_next_bound,
+                                      face, new_partner, local_path, stop)) {
+                    // publish under lock; only the first arriving winner sticks
+                    std::lock_guard<std::mutex> lk(result_mu);
+                    if (best_path.empty()) {
+                        best_path = local_path;
+                        stop.store(true, std::memory_order_relaxed);
+                    }
+                    return;
+                }
+            }
+
+            // fold this worker's next_bound suggestion into the shared one
+            int prev = next_bound_atomic.load(std::memory_order_relaxed);
+            while (local_next_bound < prev && !next_bound_atomic.compare_exchange_weak(prev, local_next_bound, std::memory_order_relaxed)) {
+                // retry logic
+            }
+        };
+
+        std::vector<std::thread> threads;
+        threads.reserve(workers);
+        for (int t = 0; t < workers; ++t) threads.emplace_back(worker, t);
+        for (auto& th : threads) th.join();
+
+        if (!best_path.empty()) {
+            std::vector<Move> out;
+            out.reserve(best_path.size());
+            for (int i : best_path) out.push_back(G1_MOVES[i]);
+            return out;
+        }
+
+        int nb = next_bound_atomic.load(std::memory_order_relaxed);
+        if (nb == SEARCH_FAILED) return {};
+        bound = nb;
+    }
+    return {};
+}
+
+std::vector<Move> solve_parallel(const CubeState& scramble, int num_threads) {
+    std::vector<Move> solution = ida_phase1(scramble);
+
+    CubeState intermediate = scramble;
+    for (Move m : solution) apply_move(intermediate, m);
+
+    std::vector<Move> p2 = ida_phase2_parallel(intermediate, num_threads);
     solution.insert(solution.end(), p2.begin(), p2.end());
     return solution;
 }

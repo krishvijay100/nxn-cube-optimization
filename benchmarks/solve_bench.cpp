@@ -119,3 +119,23 @@ BENCHMARK(BM_SolveThroughput)
     ->Unit(benchmark::kMillisecond)
     ->ThreadRange(1, 16)
     ->UseRealTime();
+
+static void BM_SolveParallel(benchmark::State& state) {
+    warm();
+    auto scrambles = make_scrambles(64, 25);
+    int num_threads = static_cast<int>(state.range(0));
+    size_t i = 0;
+    size_t total_moves = 0;
+    for (auto _ : state) {
+        auto sol = cube::solver::solve_parallel(scrambles[i], num_threads);
+        total_moves += sol.size();
+        benchmark::DoNotOptimize(sol);
+        i = (i + 1) % scrambles.size();
+    }
+    state.SetItemsProcessed(state.iterations());
+    state.counters["avg_moves"] = benchmark::Counter(double(total_moves) / state.iterations());
+}
+BENCHMARK(BM_SolveParallel)
+    ->Unit(benchmark::kMillisecond)
+    ->Arg(1)->Arg(2)->Arg(4)->Arg(8)->Arg(10)
+    ->UseRealTime();

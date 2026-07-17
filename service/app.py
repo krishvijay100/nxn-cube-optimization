@@ -6,12 +6,14 @@ returns a solution
 
 from __future__ import annotations
 
+import os
 import secrets
 from typing import Annotated
 
 from fastapi import FastAPI, HTTPException
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 
 import nxn_cube_py as nc
@@ -87,3 +89,11 @@ async def scramble(length: int = DEFAULT_SCRAMBLE_LEN) -> ScrambleResponse:
     seed = secrets.randbits(63)
     tokens = await run_in_threadpool(nc.random_scramble, length, seed)
     return ScrambleResponse(scramble=tokens, seed=seed)
+
+
+# serve the built frontend at "/" when it's present (eg inside the docker
+# image, where stage 1 emits /app/static). in local dev the vite server owns
+# the ui on :5173 and this directory doesn't exist, so we skip the mount
+_STATIC_DIR = os.environ.get("STATIC_DIR", "/app/static")
+if os.path.isdir(_STATIC_DIR):
+    app.mount("/", StaticFiles(directory=_STATIC_DIR, html=True), name="frontend")

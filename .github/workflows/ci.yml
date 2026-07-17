@@ -33,3 +33,21 @@ jobs:
 
       - name: Run FastAPI service tests
         run: PYTHONPATH="$PWD/build/bindings" pytest service/tests -v
+
+      - name: Build Docker image
+        run: docker build -t nxn-cube:ci .
+
+      - name: Smoke test Docker image
+        run: |
+          docker run -d --rm --name nxn-cube-smoke -p 8000:8000 nxn-cube:ci
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8000/health > /dev/null; then
+              echo "healthy after ${i}s"; break
+            fi
+            sleep 1
+          done
+          curl -sf http://localhost:8000/health
+          curl -sf -X POST http://localhost:8000/solve \
+            -H "Content-Type: application/json" \
+            -d '{"scramble":["R","U","F"]}'
+          docker stop nxn-cube-smoke

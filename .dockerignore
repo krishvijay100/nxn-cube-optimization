@@ -1,0 +1,36 @@
+# git + local editor
+.git
+.gitignore
+.vscode
+.idea
+.cache
+
+# host build outputs (build fresh inside the image)
+build/
+build-*/
+compile_commands.json
+
+# python caches from local dev
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+*.egg-info/
+
+# frontend caches
+web/node_modules/
+web/dist/
+web/.venv/
+
+# private notes
+ROADMAP.md
+benchmarks/LOADTEST.md
+
+# docker metadata
+Dockerfile
+.dockerignore
+
+# misc
+.DS_Store
+*.log
+*.tsbuildinfo

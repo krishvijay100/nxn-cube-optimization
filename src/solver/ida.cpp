@@ -193,16 +193,27 @@ std::vector<Move> ida_phase1(const CubeState& state) {
     };
     if (phase1_is_goal(start)) return {};
 
+    std::array<std::pair<int, int>, NUM_MOVES> root_moves;
+    for (int m = 0; m < NUM_MOVES; ++m) {
+        root_moves[m] = {phase1_h(ctx, phase1_apply(ctx, start, m)), m};
+    }
+    std::sort(root_moves.begin(), root_moves.end());
+
     std::vector<int> path;
     int bound = phase1_h(ctx, start);
     while (bound <= MAX_DEPTH_PHASE1) {
         int next_bound = SEARCH_FAILED;
-        path.clear();
-        if (phase1_dfs(ctx, start, 0, bound, next_bound, -1, -1, path)) {
-            std::vector<Move> out;
-            out.reserve(path.size());
-            for (int m : path) out.push_back(static_cast<Move>(m));
-            return out;
+        for (auto [h, m] : root_moves) {
+            int face = face_of(m);
+            Phase1Node next = phase1_apply(ctx, start, m);
+            path.clear();
+            path.push_back(m);
+            if (phase1_dfs(ctx, next, 1, bound, next_bound, face, -1, path)) {
+                std::vector<Move> out;
+                out.reserve(path.size());
+                for (int mv : path) out.push_back(static_cast<Move>(mv));
+                return out;
+            }
         }
         if (next_bound == SEARCH_FAILED) return {};   // exhausted
         bound = next_bound;
@@ -224,16 +235,27 @@ std::vector<Move> ida_phase2(const CubeState& state) {
         encode_slice_perm(state));
     if (phase2_is_goal(start)) return {};
 
+    std::array<std::pair<int, int>, NUM_G1_MOVES> root_moves;
+    for (int i = 0; i < NUM_G1_MOVES; ++i) {
+        root_moves[i] = {phase2_h(ctx, phase2_apply(ctx, start, i)), i};
+    }
+    std::sort(root_moves.begin(), root_moves.end());
+
     std::vector<int> path;
     int bound = phase2_h(ctx, start);
     while (bound <= MAX_DEPTH_PHASE2) {
         int next_bound = SEARCH_FAILED;
-        path.clear();
-        if (phase2_dfs(ctx, start, 0, bound, next_bound, -1, -1, path)) {
-            std::vector<Move> out;
-            out.reserve(path.size());
-            for (int i : path) out.push_back(G1_MOVES[i]);
-            return out;
+        for (auto [h, i] : root_moves) {
+            int face = face_of(static_cast<int>(G1_MOVES[i]));
+            Phase2Node next = phase2_apply(ctx, start, i);
+            path.clear();
+            path.push_back(i);
+            if (phase2_dfs(ctx, next, 1, bound, next_bound, face, -1, path)) {
+                std::vector<Move> out;
+                out.reserve(path.size());
+                for (int idx : path) out.push_back(G1_MOVES[idx]);
+                return out;
+            }
         }
         if (next_bound == SEARCH_FAILED) return {};
         bound = next_bound;

@@ -47,13 +47,15 @@ add_library(cube
 target_include_directories(cube PUBLIC src)
 target_compile_options(cube PRIVATE -Wall -Wextra -Wpedantic)
 
-add_library(solver
-    src/solver/coords.cpp
-    src/solver/move_tables.cpp
-    src/solver/pruning.cpp
-    src/solver/symmetry.cpp
-    src/solver/ida.cpp
+set(solver_sources
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/solver/coords.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/solver/move_tables.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/solver/pruning.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/solver/symmetry.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/solver/ida.cpp
 )
+
+add_library(solver ${solver_sources})
 target_include_directories(solver PUBLIC src)
 target_link_libraries(solver PUBLIC cube)
 target_compile_options(solver PRIVATE -Wall -Wextra -Wpedantic)

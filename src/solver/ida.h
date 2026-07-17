@@ -1,10 +1,19 @@
 #pragma once
 
+#include <cstdint>
 #include <vector>
 
 #include "cube/cube.h"
 
 namespace cube::solver {
+
+struct NodeCounts {
+    uint64_t phase1;
+    uint64_t phase2;
+};
+
+void reset_node_counts();
+NodeCounts read_node_counts();
 
 // returns the move sequence that transforms scramble into the solved cube; returns empty on malformed
 // input or if the internal depth cap is hit (never expected for valid states)

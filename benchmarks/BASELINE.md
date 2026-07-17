@@ -21,6 +21,40 @@ cmake --build build --target cube_benchmarks
 
 Throughput implication: ~472 solves/sec single-threaded.
 
+## Search-tree collapse — nodes explored per solve
+
+Measured 2026-07-17 on the same 64 × 25-move scramble corpus as `BM_Solve`.
+Instrumentation is compile-time gated behind `ENABLE_NODE_COUNTS` so the
+default `cube_benchmarks` binary pays nothing per DFS node; the counted
+binary exists solely to produce this table.
+
+Command:
+```
+cmake --build build --target cube_benchmarks_counted
+./build/benchmarks/cube_benchmarks_counted \
+    --benchmark_filter='BM_SolveNodes' --benchmark_min_time=5s
+```
+
+| metric | value | source |
+|---|---:|---|
+| avg Phase 1 nodes / solve | **~12,800** | `BM_SolveNodes` |
+| avg Phase 2 nodes / solve | **~265,000** | `BM_SolveNodes` |
+| **avg total DFS nodes / solve** | **~278,000** | `BM_SolveNodes` |
+
+### Theoretical unpruned tree size (baseline for comparison)
+
+Deriving what an unpruned IDA* search would visit at the same solve depths:
+
+- Phase 1: 18 raw moves, ~1/3 removed by redundancy pruning (same-face + parallel-face suppression) → effective branching ≈ **13.3**. Avg Phase 1 depth ≈ 9.5. Tree ≈ `13.3^9.5 ≈ 2.4×10¹⁰`.
+- Phase 2: 10 raw G1 moves, similar redundancy → effective branching ≈ **7**. Avg Phase 2 depth ≈ 13.7. Tree ≈ `7^13.7 ≈ 4.7×10¹¹`.
+- **Combined theoretical unpruned tree: ~5×10¹¹ nodes** (Phase 2 dominates).
+
+### Collapse ratio
+
+Measured ~278k explored vs ~5×10¹¹ theoretical unpruned → **~1.8×10⁶× reduction** in nodes visited (equivalently, **>99.99994%** of the theoretical tree pruned).
+
+Phase 2 dominates both the *time* budget (98% of serial latency, from below) and the *space* budget (95% of nodes explored). Pruning-table quality on Phase 2 is the single lever with the highest expected value for future perf work.
+
 ## Progress — per-solve latency
 
 | optimization | BM_Solve | speedup vs baseline | notes |

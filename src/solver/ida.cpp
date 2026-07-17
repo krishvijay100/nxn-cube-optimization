@@ -21,6 +21,39 @@ constexpr int MAX_DEPTH_PHASE1 = 25;
 constexpr int MAX_DEPTH_PHASE2 = 25;
 constexpr int SEARCH_FAILED = std::numeric_limits<int>::max();
 
+#ifdef ENABLE_NODE_COUNTS
+thread_local uint64_t tls_phase1_nodes = 0;
+thread_local uint64_t tls_phase2_nodes = 0;
+
+struct CounterRegistry {
+    std::mutex mu;
+    std::vector<uint64_t*> phase1;
+    std::vector<uint64_t*> phase2;
+};
+
+CounterRegistry& registry() {
+    static CounterRegistry r;
+    return r;
+}
+
+inline void ensure_registered() {
+    thread_local bool registered = false;
+    if (!registered) {
+        auto& r = registry();
+        std::lock_guard<std::mutex> lk(r.mu);
+        r.phase1.push_back(&tls_phase1_nodes);
+        r.phase2.push_back(&tls_phase2_nodes);
+        registered = true;
+    }
+}
+
+#define COUNT_PHASE1_NODE() do { ensure_registered(); ++tls_phase1_nodes; } while (0)
+#define COUNT_PHASE2_NODE() do { ensure_registered(); ++tls_phase2_nodes; } while (0)
+#else
+#define COUNT_PHASE1_NODE() do {} while (0)
+#define COUNT_PHASE2_NODE() do {} while (0)
+#endif
+
 inline int face_of(int move_index) { return move_index / 3; }
 
 // pick one canonical order per pair to prune equivalent branches, U/D, R/L, F/B are parallel pairs
@@ -95,6 +128,7 @@ inline Phase2Node phase2_apply(const Phase2Ctx& c, Phase2Node n, int i) {
 // updates `next_bound` with the smallest f-value that exceeded `bound`.
 bool phase1_dfs(const Phase1Ctx& c, Phase1Node n, int g, int bound, int& next_bound, int last_face, int last_axis_partner_face, std::vector<int>& path)
 {
+    COUNT_PHASE1_NODE();
     int f = g + phase1_h(c, n);
     if (f > bound) {
         if (f < next_bound) next_bound = f;
@@ -121,6 +155,7 @@ bool phase1_dfs(const Phase1Ctx& c, Phase1Node n, int g, int bound, int& next_bo
 
 bool phase2_dfs(const Phase2Ctx& c, Phase2Node n, int g, int bound, int& next_bound, int last_face, int last_axis_partner_face, std::vector<int>& path)
 {
+    COUNT_PHASE2_NODE();
     int f = g + phase2_h(c, n);
     if (f > bound) {
         if (f < next_bound) next_bound = f;
@@ -150,6 +185,7 @@ bool phase2_dfs_cancel(const Phase2Ctx& c, Phase2Node n, int g, int bound, int& 
                        int last_face, int last_axis_partner_face, std::vector<int>& path,
                        const std::atomic<bool>& stop)
 {
+    COUNT_PHASE2_NODE();
     if (stop.load(std::memory_order_relaxed)) return false;
 
     int f = g + phase2_h(c, n);
@@ -363,5 +399,28 @@ std::vector<Move> solve_parallel(const CubeState& scramble, int num_threads) {
     solution.insert(solution.end(), p2.begin(), p2.end());
     return solution;
 }
+
+#ifdef ENABLE_NODE_COUNTS
+void reset_node_counts() {
+    auto& r = registry();
+    std::lock_guard<std::mutex> lk(r.mu);
+    for (auto* p : r.phase1) *p = 0;
+    for (auto* p : r.phase2) *p = 0;
+}
+
+NodeCounts read_node_counts() {
+    auto& r = registry();
+    std::lock_guard<std::mutex> lk(r.mu);
+    NodeCounts out{0, 0};
+    for (auto* p : r.phase1) out.phase1 += *p;
+    for (auto* p : r.phase2) out.phase2 += *p;
+    return out;
+}
+#else
+// counting is a compile-time opt-in; leave the public entry points as no-ops
+// so callers link cleanly against the default build
+void reset_node_counts() {}
+NodeCounts read_node_counts() { return NodeCounts{0, 0}; }
+#endif
 
 }

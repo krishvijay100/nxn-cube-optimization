@@ -139,3 +139,25 @@ BENCHMARK(BM_SolveParallel)
     ->Unit(benchmark::kMillisecond)
     ->Arg(1)->Arg(2)->Arg(4)->Arg(8)->Arg(10)
     ->UseRealTime();
+
+// measure DFS nodes explored per solve
+static void BM_SolveNodes(benchmark::State& state) {
+    warm();
+    auto scrambles = make_scrambles(64, 25);
+    size_t i = 0;
+    uint64_t total_p1_nodes = 0, total_p2_nodes = 0;
+    for (auto _ : state) {
+        cube::solver::reset_node_counts();
+        auto sol = cube::solver::solve(scrambles[i]);
+        auto nc = cube::solver::read_node_counts();
+        total_p1_nodes += nc.phase1;
+        total_p2_nodes += nc.phase2;
+        benchmark::DoNotOptimize(sol);
+        i = (i + 1) % scrambles.size();
+    }
+    state.SetItemsProcessed(state.iterations());
+    state.counters["avg_p1_nodes"]    = benchmark::Counter(double(total_p1_nodes) / state.iterations());
+    state.counters["avg_p2_nodes"]    = benchmark::Counter(double(total_p2_nodes) / state.iterations());
+    state.counters["avg_total_nodes"] = benchmark::Counter(double(total_p1_nodes + total_p2_nodes) / state.iterations());
+}
+BENCHMARK(BM_SolveNodes)->Unit(benchmark::kMillisecond);

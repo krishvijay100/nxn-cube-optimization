@@ -8,6 +8,7 @@ using cube_nxn::NUM_FACES;
 using cube_nxn::Turn;
 using cube_nxn::rotate_face;
 using cube_nxn::apply_outer_move;
+using cube_nxn::apply_wide_move;
 
 namespace {
 
@@ -250,5 +251,128 @@ TEST(OuterMove, RClockwiseCycleOnSolvedCube) {
     }
     for (int r = 0; r < 3; ++r) {
         EXPECT_EQ(c.sticker(static_cast<int>(Face::D), r, 2), 5) << "D col 2 row " << r;
+    }
+}
+
+TEST(WideMove, MatchesOuterAtDepthZero) {
+    const Face faces[] = {Face::U, Face::R, Face::F, Face::D, Face::L, Face::B};
+    const Turn turns[] = {Turn::CW, Turn::Half, Turn::CCW};
+    for (int n = 2; n <= 7; ++n) {
+        for (Face f : faces) {
+            for (Turn t : turns) {
+                NxNCube a(n), b(n);
+                apply_outer_move(a, f, t);
+                apply_wide_move(b, f, 0, 0, t);
+                for (int i = 0; i < a.num_stickers(); ++i) {
+                    EXPECT_EQ(a.raw()[i], b.raw()[i])
+                        << "n=" << n << " f=" << static_cast<int>(f) << " t=" << static_cast<int>(t);
+                }
+            }
+        }
+    }
+}
+
+TEST(WideMove, FourCWIsIdentity) {
+    const Face faces[] = {Face::U, Face::R, Face::F, Face::D, Face::L, Face::B};
+    for (int n = 3; n <= 7; ++n) {
+        for (Face f : faces) {
+            for (int outer = 0; outer <= n / 2; ++outer) {
+                for (int inner = outer; inner <= n / 2; ++inner) {
+                    NxNCube c(n);
+                    NxNCube before = c;
+                    for (int i = 0; i < 4; ++i) apply_wide_move(c, f, outer, inner, Turn::CW);
+                    for (int i = 0; i < c.num_stickers(); ++i) {
+                        EXPECT_EQ(c.raw()[i], before.raw()[i])
+                            << "n=" << n << " f=" << static_cast<int>(f)
+                            << " outer=" << outer << " inner=" << inner << " i=" << i;
+                    }
+                }
+            }
+        }
+    }
+}
+
+TEST(WideMove, CWThenCCWIsIdentity) {
+    const Face faces[] = {Face::U, Face::R, Face::F, Face::D, Face::L, Face::B};
+    for (int n = 3; n <= 7; ++n) {
+        for (Face f : faces) {
+            for (int outer = 0; outer <= n / 2; ++outer) {
+                for (int inner = outer; inner <= n / 2; ++inner) {
+                    NxNCube c(n);
+                    NxNCube before = c;
+                    apply_wide_move(c, f, outer, inner, Turn::CW);
+                    apply_wide_move(c, f, outer, inner, Turn::CCW);
+                    for (int i = 0; i < c.num_stickers(); ++i) {
+                        EXPECT_EQ(c.raw()[i], before.raw()[i])
+                            << "n=" << n << " f=" << static_cast<int>(f)
+                            << " outer=" << outer << " inner=" << inner;
+                    }
+                }
+            }
+        }
+    }
+}
+
+TEST(WideMove, TwoCWEqualsHalf) {
+    const Face faces[] = {Face::U, Face::R, Face::F, Face::D, Face::L, Face::B};
+    for (int n = 3; n <= 7; ++n) {
+        for (Face f : faces) {
+            for (int outer = 0; outer <= n / 2; ++outer) {
+                for (int inner = outer; inner <= n / 2; ++inner) {
+                    NxNCube a(n), b(n);
+                    apply_wide_move(a, f, outer, inner, Turn::CW);
+                    apply_wide_move(a, f, outer, inner, Turn::CW);
+                    apply_wide_move(b, f, outer, inner, Turn::Half);
+                    for (int i = 0; i < a.num_stickers(); ++i) {
+                        EXPECT_EQ(a.raw()[i], b.raw()[i])
+                            << "n=" << n << " f=" << static_cast<int>(f)
+                            << " outer=" << outer << " inner=" << inner;
+                    }
+                }
+            }
+        }
+    }
+}
+
+TEST(WideMove, RwOnSolved5x5MovesTwoColumns) {
+    NxNCube c(5);
+    apply_wide_move(c, Face::R, 0, 1, Turn::CW);
+
+    for (int r = 0; r < 5; ++r) {
+        EXPECT_EQ(c.sticker(static_cast<int>(Face::F), r, 4), 3) << "F col 4 row " << r;
+        EXPECT_EQ(c.sticker(static_cast<int>(Face::F), r, 3), 3) << "F col 3 row " << r;
+        EXPECT_EQ(c.sticker(static_cast<int>(Face::U), r, 4), 2) << "U col 4 row " << r;
+        EXPECT_EQ(c.sticker(static_cast<int>(Face::U), r, 3), 2) << "U col 3 row " << r;
+        EXPECT_EQ(c.sticker(static_cast<int>(Face::B), r, 0), 0) << "B col 0 row " << r;
+        EXPECT_EQ(c.sticker(static_cast<int>(Face::B), r, 1), 0) << "B col 1 row " << r;
+        EXPECT_EQ(c.sticker(static_cast<int>(Face::D), r, 4), 5) << "D col 4 row " << r;
+        EXPECT_EQ(c.sticker(static_cast<int>(Face::D), r, 3), 5) << "D col 3 row " << r;
+    }
+}
+
+TEST(WideMove, InnerSlice3ROnSolved5x5DoesNotRotateFace) {
+    NxNCube c(5);
+    apply_wide_move(c, Face::R, 2, 2, Turn::CW);
+
+    // R face untouched; inner slice does not rotate the outer face
+    for (int r = 0; r < 5; ++r) {
+        for (int col = 0; col < 5; ++col) {
+            EXPECT_EQ(c.sticker(static_cast<int>(Face::R), r, col), 1)
+                << "R face touched at (" << r << "," << col << ")";
+        }
+    }
+
+    for (int r = 0; r < 5; ++r) {
+        EXPECT_EQ(c.sticker(static_cast<int>(Face::F), r, 4), 2) << "F col 4 row " << r;
+        EXPECT_EQ(c.sticker(static_cast<int>(Face::F), r, 3), 2) << "F col 3 row " << r;
+        EXPECT_EQ(c.sticker(static_cast<int>(Face::U), r, 4), 0) << "U col 4 row " << r;
+        EXPECT_EQ(c.sticker(static_cast<int>(Face::U), r, 3), 0) << "U col 3 row " << r;
+    }
+
+    for (int r = 0; r < 5; ++r) {
+        EXPECT_EQ(c.sticker(static_cast<int>(Face::F), r, 2), 3) << "F col 2 row " << r;
+        EXPECT_EQ(c.sticker(static_cast<int>(Face::U), r, 2), 2) << "U col 2 row " << r;
+        EXPECT_EQ(c.sticker(static_cast<int>(Face::D), r, 2), 5) << "D col 2 row " << r;
+        EXPECT_EQ(c.sticker(static_cast<int>(Face::B), r, 2), 0) << "B col 2 row " << r;
     }
 }

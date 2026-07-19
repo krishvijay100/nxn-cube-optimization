@@ -55,4 +55,7 @@ void rotate_face(NxNCube& cube, int face, Turn t);
 // apply a single outer-face move at the given turn amount; rotates the target face's own stickers AND cycles the neighboring strip on each of the four adjacent faces
 void apply_outer_move(NxNCube& cube, Face f, Turn t);
 
+// for wide or inner-slice move
+void apply_wide_move(NxNCube& cube, Face f, int outer_depth, int inner_depth, Turn t);
+
 }

@@ -52,21 +52,22 @@ enum class Dir : uint8_t {
     ColBT,   // column `line`, read bottom-to-top
 };
 
-// where along the face this strip lives
-enum class Edge : uint8_t { First, Last };
+enum class EdgeSide : uint8_t { FromFirst, FromLast };
 
 struct Strip {
     Face face;
-    Dir  dir;
-    Edge edge;
+    Dir dir;
+    EdgeSide side;
 };
 
-inline int edge_line(Edge e, int n) { return (e == Edge::First) ? 0 : n - 1; }
+inline int strip_line(EdgeSide side, int depth, int n) {
+    return (side == EdgeSide::FromFirst) ? depth : n - 1 - depth;
+}
 
-// read the n stickers of `s` into `out` in the direction dictated by s.dir
-inline void read_strip(const NxNCube& cube, const Strip& s, uint8_t* out) {
+// read the n stickers of `s` at the given depth into `out` in the direction dictated by s.dir
+inline void read_strip(const NxNCube& cube, const Strip& s, int depth, uint8_t* out) {
     const int n = cube.n();
-    const int line = edge_line(s.edge, n);
+    const int line = strip_line(s.side, depth, n);
     const uint8_t* fdata = cube.face_data(static_cast<int>(s.face));
     switch (s.dir) {
         case Dir::RowLR: for (int i = 0; i < n; ++i) out[i] = fdata[line * n + i];         break;
@@ -76,10 +77,10 @@ inline void read_strip(const NxNCube& cube, const Strip& s, uint8_t* out) {
     }
 }
 
-// write n stickers from `in` into `s` in the direction dictated by s.dir
-inline void write_strip(NxNCube& cube, const Strip& s, const uint8_t* in) {
+// write n stickers from `in` into `s` at the given depth in the direction dictated by s.dir
+inline void write_strip(NxNCube& cube, const Strip& s, int depth, const uint8_t* in) {
     const int n = cube.n();
-    const int line = edge_line(s.edge, n);
+    const int line = strip_line(s.side, depth, n);
     uint8_t* fdata = cube.face_data(static_cast<int>(s.face));
     switch (s.dir) {
         case Dir::RowLR: for (int i = 0; i < n; ++i) fdata[line * n + i]         = in[i]; break;
@@ -94,45 +95,45 @@ struct OuterMove {
 };
 
 constexpr OuterMove U_MOVE = {{
-    {Face::F, Dir::RowLR, Edge::First},
-    {Face::L, Dir::RowLR, Edge::First},
-    {Face::B, Dir::RowLR, Edge::First},
-    {Face::R, Dir::RowLR, Edge::First},
+    {Face::F, Dir::RowLR, EdgeSide::FromFirst},
+    {Face::L, Dir::RowLR, EdgeSide::FromFirst},
+    {Face::B, Dir::RowLR, EdgeSide::FromFirst},
+    {Face::R, Dir::RowLR, EdgeSide::FromFirst},
 }};
 
 constexpr OuterMove R_MOVE = {{
-    {Face::F, Dir::ColTB, Edge::Last},
-    {Face::U, Dir::ColTB, Edge::Last},
-    {Face::B, Dir::ColBT, Edge::First},
-    {Face::D, Dir::ColTB, Edge::Last},
+    {Face::F, Dir::ColTB, EdgeSide::FromLast},
+    {Face::U, Dir::ColTB, EdgeSide::FromLast},
+    {Face::B, Dir::ColBT, EdgeSide::FromFirst},
+    {Face::D, Dir::ColTB, EdgeSide::FromLast},
 }};
 
 constexpr OuterMove F_MOVE = {{
-    {Face::U, Dir::RowLR, Edge::Last},
-    {Face::R, Dir::ColTB, Edge::First},
-    {Face::D, Dir::RowRL, Edge::First},
-    {Face::L, Dir::ColBT, Edge::Last},
+    {Face::U, Dir::RowLR, EdgeSide::FromLast},
+    {Face::R, Dir::ColTB, EdgeSide::FromFirst},
+    {Face::D, Dir::RowRL, EdgeSide::FromFirst},
+    {Face::L, Dir::ColBT, EdgeSide::FromLast},
 }};
 
 constexpr OuterMove D_MOVE = {{
-    {Face::F, Dir::RowLR, Edge::Last},
-    {Face::R, Dir::RowLR, Edge::Last},
-    {Face::B, Dir::RowLR, Edge::Last},
-    {Face::L, Dir::RowLR, Edge::Last},
+    {Face::F, Dir::RowLR, EdgeSide::FromLast},
+    {Face::R, Dir::RowLR, EdgeSide::FromLast},
+    {Face::B, Dir::RowLR, EdgeSide::FromLast},
+    {Face::L, Dir::RowLR, EdgeSide::FromLast},
 }};
 
 constexpr OuterMove L_MOVE = {{
-    {Face::F, Dir::ColTB, Edge::First},
-    {Face::D, Dir::ColTB, Edge::First},
-    {Face::B, Dir::ColBT, Edge::Last},
-    {Face::U, Dir::ColTB, Edge::First},
+    {Face::F, Dir::ColTB, EdgeSide::FromFirst},
+    {Face::D, Dir::ColTB, EdgeSide::FromFirst},
+    {Face::B, Dir::ColBT, EdgeSide::FromLast},
+    {Face::U, Dir::ColTB, EdgeSide::FromFirst},
 }};
 
 constexpr OuterMove B_MOVE = {{
-    {Face::U, Dir::RowRL, Edge::First},
-    {Face::L, Dir::ColTB, Edge::First},
-    {Face::D, Dir::RowLR, Edge::Last},
-    {Face::R, Dir::ColBT, Edge::Last},
+    {Face::U, Dir::RowRL, EdgeSide::FromFirst},
+    {Face::L, Dir::ColTB, EdgeSide::FromFirst},
+    {Face::D, Dir::RowLR, EdgeSide::FromLast},
+    {Face::R, Dir::ColBT, EdgeSide::FromLast},
 }};
 
 inline const OuterMove& outer_table(Face f) {
@@ -147,26 +148,39 @@ inline const OuterMove& outer_table(Face f) {
     return U_MOVE;   // unreachable
 }
 
-void cycle_strips_once(NxNCube& cube, const OuterMove& m) {
+void cycle_strips_once(NxNCube& cube, const OuterMove& m, int depth) {
     const int n = cube.n();
     std::vector<uint8_t> a(n), b(n), c(n), d(n);
-    read_strip(cube, m.strips[0], a.data());
-    read_strip(cube, m.strips[1], b.data());
-    read_strip(cube, m.strips[2], c.data());
-    read_strip(cube, m.strips[3], d.data());
-    write_strip(cube, m.strips[1], a.data());
-    write_strip(cube, m.strips[2], b.data());
-    write_strip(cube, m.strips[3], c.data());
-    write_strip(cube, m.strips[0], d.data());
+    read_strip(cube, m.strips[0], depth, a.data());
+    read_strip(cube, m.strips[1], depth, b.data());
+    read_strip(cube, m.strips[2], depth, c.data());
+    read_strip(cube, m.strips[3], depth, d.data());
+    write_strip(cube, m.strips[1], depth, a.data());
+    write_strip(cube, m.strips[2], depth, b.data());
+    write_strip(cube, m.strips[3], depth, c.data());
+    write_strip(cube, m.strips[0], depth, d.data());
 }
 
+}
+
+void apply_wide_move(NxNCube& cube, Face f, int outer_depth, int inner_depth, Turn t) {
+    assert(0 <= outer_depth && outer_depth <= inner_depth);
+    assert(inner_depth < cube.n());
+
+    // rotate the outer face iff depth 0 is included in the range
+    if (outer_depth == 0) {
+        rotate_face(cube, static_cast<int>(f), t);
+    }
+
+    const OuterMove& m = outer_table(f);
+    const int shifts = (t == Turn::CW) ? 1 : (t == Turn::Half) ? 2 : 3;
+    for (int depth = outer_depth; depth <= inner_depth; ++depth) {
+        for (int i = 0; i < shifts; ++i) cycle_strips_once(cube, m, depth);
+    }
 }
 
 void apply_outer_move(NxNCube& cube, Face f, Turn t) {
-    rotate_face(cube, static_cast<int>(f), t);
-    const OuterMove& m = outer_table(f);
-    const int shifts = (t == Turn::CW) ? 1 : (t == Turn::Half) ? 2 : 3;
-    for (int i = 0; i < shifts; ++i) cycle_strips_once(cube, m);
+    apply_wide_move(cube, f, 0, 0, t);
 }
 
 // write the rotated stickers into a temp array using turn formula then copy back

@@ -52,4 +52,7 @@ enum class Turn : uint8_t {
 // rotate the stickers of one face in place by the given amount; does NOT touch any other face
 void rotate_face(NxNCube& cube, int face, Turn t);
 
+// apply a single outer-face move at the given turn amount; rotates the target face's own stickers AND cycles the neighboring strip on each of the four adjacent faces
+void apply_outer_move(NxNCube& cube, Face f, Turn t);
+
 }

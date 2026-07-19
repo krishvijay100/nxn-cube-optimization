@@ -1,0 +1,46 @@
+#pragma once
+
+#include <cstddef>
+#include <cstdint>
+#include <vector>
+
+namespace cube_nxn {
+
+// wca face convention; solved cube has stickers[face_id * n*n + i] == face_id for every i
+enum class Face : uint8_t {
+    U = 0,
+    R = 1,
+    F = 2,
+    D = 3,
+    L = 4,
+    B = 5,
+};
+
+constexpr int NUM_FACES = 6;
+
+// index of the sticker at (face, row, col) is face*n*n + row*n + col
+class NxNCube {
+public:
+    explicit NxNCube(int n);
+
+    int n() const { return n_; }
+    int face_size() const { return n_ * n_; }
+    int num_stickers() const { return NUM_FACES * n_ * n_; }
+
+    uint8_t sticker(int face, int row, int col) const;
+    void set_sticker(int face, int row, int col, uint8_t color);
+
+    uint8_t* face_data(int face);
+    const uint8_t* face_data(int face) const;
+
+    uint8_t* raw() { return stickers_.data(); }
+    const uint8_t* raw() const { return stickers_.data(); }
+
+    bool is_solved() const;
+
+private:
+    int n_;
+    std::vector<uint8_t> stickers_;
+};
+
+}

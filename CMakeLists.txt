@@ -47,6 +47,12 @@ add_library(cube
 target_include_directories(cube PUBLIC src)
 target_compile_options(cube PRIVATE -Wall -Wextra -Wpedantic)
 
+add_library(cube_nxn
+    src/cube_nxn/cube_nxn.cpp
+)
+target_include_directories(cube_nxn PUBLIC src)
+target_compile_options(cube_nxn PRIVATE -Wall -Wextra -Wpedantic)
+
 set(solver_sources
     ${CMAKE_CURRENT_SOURCE_DIR}/src/solver/coords.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/solver/move_tables.cpp

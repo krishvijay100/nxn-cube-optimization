@@ -11,6 +11,7 @@ add_executable(cube_tests
     ida_test.cpp
     ida_thread_safety_test.cpp
     ida_parallel_test.cpp
+    cube_nxn_test.cpp
 )
-target_link_libraries(cube_tests PRIVATE cube solver GTest::gtest_main)
+target_link_libraries(cube_tests PRIVATE cube cube_nxn solver GTest::gtest_main)
 gtest_discover_tests(cube_tests)

@@ -1,6 +1,7 @@
 #include "cube_nxn/cube_nxn.h"
 
 #include <cassert>
+#include <vector>
 
 namespace cube_nxn {
 
@@ -40,6 +41,27 @@ bool NxNCube::is_solved() const {
         }
     }
     return true;
+}
+
+// write the rotated stickers into a temp array using turn formula then copy back
+void rotate_face(NxNCube& cube, int face, Turn t) {
+    const int n = cube.n();
+    uint8_t* src = cube.face_data(face);
+    std::vector<uint8_t> scratch(n * n);
+
+    for (int r = 0; r < n; ++r) {
+        for (int c = 0; c < n; ++c) {
+            int nr, nc;
+            switch (t) {
+                case Turn::CW:   nr = c;         nc = n - 1 - r; break;
+                case Turn::CCW:  nr = n - 1 - c; nc = r;         break;
+                case Turn::Half: nr = n - 1 - r; nc = n - 1 - c; break;
+            }
+            scratch[nr * n + nc] = src[r * n + c];
+        }
+    }
+
+    for (int i = 0; i < n * n; ++i) src[i] = scratch[i];
 }
 
 }

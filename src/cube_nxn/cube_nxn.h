@@ -43,4 +43,13 @@ private:
     std::vector<uint8_t> stickers_;
 };
 
+enum class Turn : uint8_t {
+    CW = 0,
+    Half = 1,
+    CCW = 2,
+};
+
+// rotate the stickers of one face in place by the given amount; does NOT touch any other face
+void rotate_face(NxNCube& cube, int face, Turn t);
+
 }

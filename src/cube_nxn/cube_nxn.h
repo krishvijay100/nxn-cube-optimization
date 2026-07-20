@@ -78,4 +78,16 @@ std::string format_move(const Move& m);
 
 std::vector<Move> random_scramble(int n, int length, uint64_t seed);
 
+// stage of the reduction pipeline being solved; determines the move set the BFS is allowed to explore
+enum class Stage : uint8_t {
+    Centers,   // no prior-stage constraints; all moves legal
+    Edges,     // centers must remain solved
+    Parity,    // centers + edges preserved; 3x3-equivalent move set
+};
+
+using MoveStep = std::vector<Move>;
+
+std::vector<MoveStep> legal_move_steps_for_stage(int n, Stage stage);
+void apply_move_step(NxNCube& cube, const MoveStep& step);
+
 }

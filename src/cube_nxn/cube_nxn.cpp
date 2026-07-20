@@ -373,4 +373,112 @@ std::vector<Move> random_scramble(int n, int length, uint64_t seed) {
     return out;
 }
 
+namespace {
+
+constexpr Turn ALL_TURNS[3] = {Turn::CW, Turn::Half, Turn::CCW};
+
+inline Turn inverse_turn(Turn t) {
+    switch (t) {
+        case Turn::CW:   return Turn::CCW;
+        case Turn::CCW:  return Turn::CW;
+        case Turn::Half: return Turn::Half;
+    }
+    return Turn::CW;
+}
+
+// the two axis faces of each face's rotation axis
+inline void axis_faces_of(Face f, Face out[2]) {
+    switch (f) {
+        case Face::R: case Face::L: out[0] = Face::R; out[1] = Face::L; break;
+        case Face::U: case Face::D: out[0] = Face::U; out[1] = Face::D; break;
+        case Face::F: case Face::B: out[0] = Face::F; out[1] = Face::B; break;
+    }
+}
+
+void append_outer_turns(std::vector<MoveStep>& out) {
+    const Face faces[6] = {Face::U, Face::R, Face::F, Face::D, Face::L, Face::B};
+    for (Face f : faces) {
+        for (Turn t : ALL_TURNS) {
+            out.push_back({Move{f, 0, 0, t}});
+        }
+    }
+}
+
+void append_wide_moves(std::vector<MoveStep>& out, int max_inner) {
+    const Face faces[6] = {Face::U, Face::R, Face::F, Face::D, Face::L, Face::B};
+    for (Face f : faces) {
+        for (int inner = 1; inner <= max_inner; ++inner) {
+            for (Turn t : ALL_TURNS) {
+                out.push_back({Move{f, 0, inner, t}});
+            }
+        }
+    }
+}
+
+void append_inner_slices(std::vector<MoveStep>& out, int min_depth, int max_depth) {
+    const Face faces[6] = {Face::U, Face::R, Face::F, Face::D, Face::L, Face::B};
+    for (Face f : faces) {
+        for (int d = min_depth; d <= max_depth; ++d) {
+            for (Turn t : ALL_TURNS) {
+                out.push_back({Move{f, d, d, t}});
+            }
+        }
+    }
+}
+
+// generate every safe slice-face-slice conjugate: S · X · S⁻¹
+void append_slice_conjugates(std::vector<MoveStep>& out, int n) {
+    const Face slice_faces[6] = {Face::U, Face::R, Face::F, Face::D, Face::L, Face::B};
+    const int max_slice_depth = (n / 2) - 1;
+    if (max_slice_depth < 1) return;
+
+    for (Face s_face : slice_faces) {
+        Face axis[2];
+        axis_faces_of(s_face, axis);
+        for (int d = 1; d <= max_slice_depth; ++d) {
+            for (Turn s_turn : ALL_TURNS) {
+                Move s_move{s_face, d, d, s_turn};
+                Move s_inv {s_face, d, d, inverse_turn(s_turn)};
+                for (Face x_face : axis) {
+                    for (Turn x_turn : ALL_TURNS) {
+                        Move x_move{x_face, 0, 0, x_turn};
+                        out.push_back({s_move, x_move, s_inv});
+                    }
+                }
+            }
+        }
+    }
+}
+
+}
+
+void apply_move_step(NxNCube& cube, const MoveStep& step) {
+    for (const Move& m : step) apply_move(cube, m);
+}
+
+std::vector<MoveStep> legal_move_steps_for_stage(int n, Stage stage) {
+    std::vector<MoveStep> out;
+    switch (stage) {
+        case Stage::Centers: {
+            append_outer_turns(out);
+            if (n >= 4) {
+                const int max_wide_inner = (n / 2) - 1;
+                if (max_wide_inner >= 1) append_wide_moves(out, max_wide_inner);
+                append_inner_slices(out, 1, (n / 2) - 1);
+            }
+            break;
+        }
+        case Stage::Edges: {
+            append_outer_turns(out);
+            if (n >= 4) append_slice_conjugates(out, n);
+            break;
+        }
+        case Stage::Parity: {
+            append_outer_turns(out);
+            break;
+        }
+    }
+    return out;
+}
+
 }

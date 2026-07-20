@@ -15,6 +15,10 @@ using cube_nxn::parse_move;
 using cube_nxn::parse_scramble;
 using cube_nxn::format_move;
 using cube_nxn::random_scramble;
+using cube_nxn::Stage;
+using cube_nxn::MoveStep;
+using cube_nxn::legal_move_steps_for_stage;
+using cube_nxn::apply_move_step;
 
 namespace {
 
@@ -540,5 +544,98 @@ TEST(RandomScramble, EveryMoveIsFormatRoundTrippable) {
             EXPECT_EQ(parsed->inner_depth, m.inner_depth);
             EXPECT_EQ(parsed->turn, m.turn);
         }
+    }
+}
+
+namespace {
+
+bool centers_solved(const NxNCube& c) {
+    const int n = c.n();
+    if (n < 3) return true;   // no interior on n=2
+    for (int f = 0; f < NUM_FACES; ++f) {
+        const uint8_t expected = static_cast<uint8_t>(f);
+        for (int r = 1; r < n - 1; ++r) {
+            for (int col = 1; col < n - 1; ++col) {
+                if (c.sticker(f, r, col) != expected) return false;
+            }
+        }
+    }
+    return true;
+}
+
+}
+
+TEST(LegalMoveSteps, ParityStageIsOnlyOuterTurns) {
+    for (int n = 3; n <= 7; ++n) {
+        auto steps = legal_move_steps_for_stage(n, Stage::Parity);
+        EXPECT_EQ(steps.size(), 18u) << "n=" << n;
+        for (const auto& step : steps) {
+            ASSERT_EQ(step.size(), 1u);
+            EXPECT_EQ(step[0].outer_depth, 0);
+            EXPECT_EQ(step[0].inner_depth, 0);
+        }
+    }
+}
+
+TEST(LegalMoveSteps, CentersStageIncludesWidesAndSlicesForBigCubes) {
+    auto s3 = legal_move_steps_for_stage(3, Stage::Centers);
+    EXPECT_EQ(s3.size(), 18u);
+
+    auto s4 = legal_move_steps_for_stage(4, Stage::Centers);
+    EXPECT_EQ(s4.size(), 18u + 18u + 18u);
+}
+
+// the load-bearing safety invariant: every step in the Edges-stage move set
+// must preserve centers when applied to a solved cube
+TEST(LegalMoveSteps, EdgesStageStepsPreserveCenters) {
+    for (int n = 4; n <= 7; ++n) {
+        auto steps = legal_move_steps_for_stage(n, Stage::Edges);
+        for (size_t i = 0; i < steps.size(); ++i) {
+            NxNCube c(n);
+            apply_move_step(c, steps[i]);
+            EXPECT_TRUE(centers_solved(c))
+                << "n=" << n << " step index=" << i
+                << " (step length=" << steps[i].size() << ")";
+        }
+    }
+}
+
+// tighter check on the Edges move set for n=5: after every single legal step,
+// the entire cube state is a permutation of the solved state's stickers per face
+TEST(LegalMoveSteps, EdgesStagePreservesFaceColorMultisetsOnN5) {
+    const int n = 5;
+    auto steps = legal_move_steps_for_stage(n, Stage::Edges);
+    for (size_t i = 0; i < steps.size(); ++i) {
+        NxNCube c(n);
+        apply_move_step(c, steps[i]);
+        int face_totals[NUM_FACES][NUM_FACES] = {{0}};
+        for (int f = 0; f < NUM_FACES; ++f) {
+            for (int r = 0; r < n; ++r) {
+                for (int col = 0; col < n; ++col) {
+                    ++face_totals[f][c.sticker(f, r, col)];
+                }
+            }
+        }
+        int global[NUM_FACES] = {0};
+        for (int f = 0; f < NUM_FACES; ++f) {
+            for (int cl = 0; cl < NUM_FACES; ++cl) global[cl] += face_totals[f][cl];
+        }
+        for (int cl = 0; cl < NUM_FACES; ++cl) {
+            EXPECT_EQ(global[cl], n * n) << "step " << i << " color " << cl;
+        }
+    }
+}
+
+TEST(ApplyMoveStep, MatchesSequentialApplyMove) {
+    auto steps = legal_move_steps_for_stage(5, Stage::Edges);
+    MoveStep conj;
+    for (const auto& s : steps) if (s.size() == 3) { conj = s; break; }
+    ASSERT_EQ(conj.size(), 3u);
+
+    NxNCube a(5), b(5);
+    apply_move_step(a, conj);
+    for (const auto& m : conj) apply_move(b, m);
+    for (int i = 0; i < a.num_stickers(); ++i) {
+        EXPECT_EQ(a.raw()[i], b.raw()[i]) << "i=" << i;
     }
 }

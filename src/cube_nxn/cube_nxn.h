@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -89,5 +90,21 @@ using MoveStep = std::vector<Move>;
 
 std::vector<MoveStep> legal_move_steps_for_stage(int n, Stage stage);
 void apply_move_step(NxNCube& cube, const MoveStep& step);
+
+// result of a bounded BFS reduction search
+struct BFSResult {
+    bool found;
+    std::vector<MoveStep> sequence;
+    size_t nodes_explored;
+};
+
+// generic bounded BFS
+BFSResult reduce_bfs(
+    const NxNCube&                                  start,
+    const std::function<bool(const NxNCube&)>&      is_goal,
+    const std::function<uint64_t(const NxNCube&)>&  state_hash,
+    const std::vector<MoveStep>&                    moves,
+    int                                             max_depth,
+    size_t                                          max_nodes = 5'000'000);
 
 }

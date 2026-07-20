@@ -19,6 +19,8 @@ using cube_nxn::Stage;
 using cube_nxn::MoveStep;
 using cube_nxn::legal_move_steps_for_stage;
 using cube_nxn::apply_move_step;
+using cube_nxn::BFSResult;
+using cube_nxn::reduce_bfs;
 
 namespace {
 
@@ -638,4 +640,94 @@ TEST(ApplyMoveStep, MatchesSequentialApplyMove) {
     for (int i = 0; i < a.num_stickers(); ++i) {
         EXPECT_EQ(a.raw()[i], b.raw()[i]) << "i=" << i;
     }
+}
+
+namespace {
+
+// 64-bit fnv-1a hash of the full sticker array
+uint64_t hash_full_state(const NxNCube& c) {
+    uint64_t h = 0xcbf29ce484222325ULL;
+    const uint8_t* p = c.raw();
+    const int n = c.num_stickers();
+    for (int i = 0; i < n; ++i) {
+        h ^= p[i];
+        h *= 0x100000001b3ULL;
+    }
+    return h;
+}
+
+struct MatchesTarget {
+    NxNCube target;
+    bool operator()(const NxNCube& c) const {
+        return std::equal(c.raw(), c.raw() + c.num_stickers(), target.raw());
+    }
+};
+
+}
+
+TEST(ReduceBFS, EmptyPathWhenAlreadyAtGoal) {
+    NxNCube start(3);
+    auto moves = legal_move_steps_for_stage(3, Stage::Parity);
+    auto goal = [](const NxNCube&) { return true; };
+    auto result = reduce_bfs(start, goal, hash_full_state, moves, 5);
+    EXPECT_TRUE(result.found);
+    EXPECT_EQ(result.sequence.size(), 0u);
+}
+
+TEST(ReduceBFS, FindsOneStepSolution) {
+    NxNCube start(3);
+    NxNCube target = start;
+    apply_move(target, Move{Face::R, 0, 0, Turn::CW});
+
+    auto moves = legal_move_steps_for_stage(3, Stage::Parity);
+    auto result = reduce_bfs(start, MatchesTarget{target}, hash_full_state, moves, 3);
+    ASSERT_TRUE(result.found);
+    EXPECT_EQ(result.sequence.size(), 1u);
+    NxNCube reproduced(3);
+    for (const auto& s : result.sequence) apply_move_step(reproduced, s);
+    for (int i = 0; i < reproduced.num_stickers(); ++i) {
+        EXPECT_EQ(reproduced.raw()[i], target.raw()[i]);
+    }
+}
+
+TEST(ReduceBFS, FindsShortestTwoStepSolution) {
+    NxNCube start(3);
+    NxNCube target = start;
+    apply_move(target, Move{Face::R, 0, 0, Turn::CW});
+    apply_move(target, Move{Face::U, 0, 0, Turn::CW});
+
+    auto moves = legal_move_steps_for_stage(3, Stage::Parity);
+    auto result = reduce_bfs(start, MatchesTarget{target}, hash_full_state, moves, 4);
+    ASSERT_TRUE(result.found);
+    EXPECT_EQ(result.sequence.size(), 2u);
+    NxNCube reproduced(3);
+    for (const auto& s : result.sequence) apply_move_step(reproduced, s);
+    for (int i = 0; i < reproduced.num_stickers(); ++i) {
+        EXPECT_EQ(reproduced.raw()[i], target.raw()[i]);
+    }
+}
+
+TEST(ReduceBFS, HonorsDepthBound) {
+    NxNCube start(3);
+    NxNCube target = start;
+    apply_move(target, Move{Face::R, 0, 0, Turn::CW});
+    apply_move(target, Move{Face::U, 0, 0, Turn::CW});
+    apply_move(target, Move{Face::F, 0, 0, Turn::CW});
+
+    auto moves = legal_move_steps_for_stage(3, Stage::Parity);
+    auto result = reduce_bfs(start, MatchesTarget{target}, hash_full_state, moves, 2);
+    EXPECT_FALSE(result.found);
+}
+
+TEST(ReduceBFS, HonorsNodeCap) {
+    NxNCube start(3);
+    NxNCube target = start;
+    apply_move(target, Move{Face::R, 0, 0, Turn::CW});
+    apply_move(target, Move{Face::U, 0, 0, Turn::CW});
+    apply_move(target, Move{Face::F, 0, 0, Turn::CW});
+
+    auto moves = legal_move_steps_for_stage(3, Stage::Parity);
+    auto result = reduce_bfs(start, MatchesTarget{target}, hash_full_state, moves, 5, /*max_nodes=*/50);
+    EXPECT_FALSE(result.found);
+    EXPECT_LE(result.nodes_explored, 50u + moves.size());   // may overshoot slightly per outer iteration
 }

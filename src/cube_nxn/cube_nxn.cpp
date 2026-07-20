@@ -3,7 +3,9 @@
 #include <cassert>
 #include <cctype>
 #include <cstdlib>
+#include <queue>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 namespace cube_nxn {
@@ -479,6 +481,67 @@ std::vector<MoveStep> legal_move_steps_for_stage(int n, Stage stage) {
         }
     }
     return out;
+}
+
+BFSResult reduce_bfs(
+    const NxNCube&                                  start,
+    const std::function<bool(const NxNCube&)>&      is_goal,
+    const std::function<uint64_t(const NxNCube&)>&  state_hash,
+    const std::vector<MoveStep>&                    moves,
+    int                                             max_depth,
+    size_t                                          max_nodes)
+{
+    // early-out if the start already satisfies the goal
+    if (is_goal(start)) {
+        return {true, {}, 1};
+    }
+
+    // naive path-in-queue BFS; switch to parent-link reconstruction later if a stage blows the memory budget
+    struct Frame {
+        NxNCube cube;
+        std::vector<MoveStep> path;
+    };
+
+    std::queue<Frame> q;
+    std::unordered_set<uint64_t> seen;
+
+    q.push({start, {}});
+    seen.insert(state_hash(start));
+    size_t explored = 1;
+
+    while (!q.empty()) {
+        Frame cur = std::move(q.front());
+        q.pop();
+
+        const int depth = static_cast<int>(cur.path.size());
+        if (depth >= max_depth) continue;
+
+        for (const MoveStep& step : moves) {
+            NxNCube next = cur.cube;
+            apply_move_step(next, step);
+
+            uint64_t h = state_hash(next);
+            if (!seen.insert(h).second) continue;
+            ++explored;
+
+            if (is_goal(next)) {
+                std::vector<MoveStep> out = cur.path;
+                out.push_back(step);
+                return {true, std::move(out), explored};
+            }
+
+            if (explored >= max_nodes) {
+                // hard node cap, bail
+                return {false, {}, explored};
+            }
+
+            std::vector<MoveStep> next_path = cur.path;
+            next_path.push_back(step);
+            q.push({std::move(next), std::move(next_path)});
+        }
+    }
+
+    return {false, {}, explored};
 }
 
 }

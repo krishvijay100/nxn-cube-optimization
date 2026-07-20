@@ -1,6 +1,9 @@
 #include "cube_nxn/cube_nxn.h"
 
 #include <cassert>
+#include <cctype>
+#include <cstdlib>
+#include <string>
 #include <vector>
 
 namespace cube_nxn {
@@ -202,6 +205,172 @@ void rotate_face(NxNCube& cube, int face, Turn t) {
     }
 
     for (int i = 0; i < n * n; ++i) src[i] = scratch[i];
+}
+
+void apply_move(NxNCube& cube, const Move& m) {
+    apply_wide_move(cube, m.face, m.outer_depth, m.inner_depth, m.turn);
+}
+
+namespace {
+
+std::optional<Face> parse_face(char c) {
+    switch (c) {
+        case 'U': return Face::U;
+        case 'R': return Face::R;
+        case 'F': return Face::F;
+        case 'D': return Face::D;
+        case 'L': return Face::L;
+        case 'B': return Face::B;
+    }
+    return std::nullopt;
+}
+
+char face_char(Face f) {
+    switch (f) {
+        case Face::U: return 'U';
+        case Face::R: return 'R';
+        case Face::F: return 'F';
+        case Face::D: return 'D';
+        case Face::L: return 'L';
+        case Face::B: return 'B';
+    }
+    return '?';
+}
+
+}
+
+// grammar: [digits] face ['w'] ['2' | '\'']
+// - no digits + no w: single outer layer  (outer=0, inner=0)
+// - no digits + w:    2-layer wide         (outer=0, inner=1)
+// - digits N + w:     N-layer wide         (outer=0, inner=N-1)
+// - digits N + no w:  single inner slice at depth N-1  (outer=N-1, inner=N-1)
+std::optional<Move> parse_move(std::string_view s) {
+    if (s.empty()) return std::nullopt;
+
+    size_t i = 0;
+
+    // optional leading digits (depth prefix)
+    int depth_prefix = 0;
+    bool has_depth_prefix = false;
+    while (i < s.size() && std::isdigit(static_cast<unsigned char>(s[i]))) {
+        depth_prefix = depth_prefix * 10 + (s[i] - '0');
+        has_depth_prefix = true;
+        ++i;
+    }
+
+    // face letter
+    if (i >= s.size()) return std::nullopt;
+    auto f = parse_face(s[i]);
+    if (!f) return std::nullopt;
+    ++i;
+
+    // optional wide marker
+    bool wide = false;
+    if (i < s.size() && s[i] == 'w') {
+        wide = true;
+        ++i;
+    }
+
+    // optional turn modifier
+    Turn turn = Turn::CW;
+    if (i < s.size()) {
+        if (s[i] == '\'') { turn = Turn::CCW;  ++i; }
+        else if (s[i] == '2') { turn = Turn::Half; ++i; }
+        else return std::nullopt;
+    }
+
+    // trailing junk
+    if (i != s.size()) return std::nullopt;
+
+    // resolve to outer/inner depths per grammar rules
+    Move m{*f, 0, 0, turn};
+    if (wide) {
+        // "Fw" == 2 layers by convention; "NFw" == N layers
+        int layers = has_depth_prefix ? depth_prefix : 2;
+        if (layers < 2) return std::nullopt;
+        m.outer_depth = 0;
+        m.inner_depth = layers - 1;
+    } else if (has_depth_prefix) {
+        // "NF" (digit, no w) == single inner slice at depth N-1
+        if (depth_prefix < 2) return std::nullopt;
+        m.outer_depth = depth_prefix - 1;
+        m.inner_depth = depth_prefix - 1;
+    }
+    // else: bare face letter, m stays at outer=0, inner=0
+    return m;
+}
+
+std::optional<std::vector<Move>> parse_scramble(std::string_view s) {
+    std::vector<Move> out;
+    size_t i = 0;
+    while (i < s.size()) {
+        while (i < s.size() && std::isspace(static_cast<unsigned char>(s[i]))) ++i;
+        if (i >= s.size()) break;
+        size_t start = i;
+        while (i < s.size() && !std::isspace(static_cast<unsigned char>(s[i]))) ++i;
+        auto m = parse_move(s.substr(start, i - start));
+        if (!m) return std::nullopt;
+        out.push_back(*m);
+    }
+    return out;
+}
+
+std::string format_move(const Move& m) {
+    std::string out;
+    const bool wide      = m.outer_depth == 0 && m.inner_depth > 0;
+    const bool inner_one = m.outer_depth > 0 && m.outer_depth == m.inner_depth;
+
+    if (wide) {
+        if (m.inner_depth > 1) out += std::to_string(m.inner_depth + 1);
+    } else if (inner_one) {
+        out += std::to_string(m.outer_depth + 1);
+    }
+    out += face_char(m.face);
+    if (wide) out += 'w';
+    if (m.turn == Turn::CCW)      out += '\'';
+    else if (m.turn == Turn::Half) out += '2';
+    return out;
+}
+
+namespace {
+
+// splitmix64: tiny stateless PRNG
+inline uint64_t splitmix64(uint64_t& state) {
+    uint64_t z = (state += 0x9E3779B97F4A7C15ULL);
+    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
+    z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
+    return z ^ (z >> 31);
+}
+
+}
+
+std::vector<Move> random_scramble(int n, int length, uint64_t seed) {
+    assert(n >= 2 && length >= 0);
+    std::vector<Move> out;
+    out.reserve(length);
+
+    const int max_extra_depth = (n >= 4) ? (n / 2 - 1) : 0;
+
+    uint64_t st = seed ? seed : 0xdeadbeefULL;
+    Face last_face = Face::U;
+    bool have_last = false;
+
+    while (static_cast<int>(out.size()) < length) {
+        Face f = static_cast<Face>(splitmix64(st) % 6);
+        if (have_last && f == last_face) continue;   // don't stack same-face moves
+
+        int inner = 0;
+        if (max_extra_depth > 0) {
+            inner = static_cast<int>(splitmix64(st) % (max_extra_depth + 1));
+        }
+        int outer = 0;
+
+        Turn t = static_cast<Turn>(splitmix64(st) % 3);
+        out.push_back({f, outer, inner, t});
+        last_face = f;
+        have_last = true;
+    }
+    return out;
 }
 
 }

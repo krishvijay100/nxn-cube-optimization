@@ -2,6 +2,9 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
+#include <string>
+#include <string_view>
 #include <vector>
 
 namespace cube_nxn {
@@ -57,5 +60,22 @@ void apply_outer_move(NxNCube& cube, Face f, Turn t);
 
 // for wide or inner-slice move
 void apply_wide_move(NxNCube& cube, Face f, int outer_depth, int inner_depth, Turn t);
+
+struct Move {
+    Face face;
+    int  outer_depth;
+    int  inner_depth;
+    Turn turn;
+};
+
+void apply_move(NxNCube& cube, const Move& m);
+
+std::optional<Move> parse_move(std::string_view s);
+
+std::optional<std::vector<Move>> parse_scramble(std::string_view s);
+
+std::string format_move(const Move& m);
+
+std::vector<Move> random_scramble(int n, int length, uint64_t seed);
 
 }

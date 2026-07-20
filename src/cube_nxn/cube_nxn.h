@@ -107,4 +107,10 @@ BFSResult reduce_bfs(
     int                                             max_depth,
     size_t                                          max_nodes = 5'000'000);
 
+// solve centers on a 4x4 cube one face at a time via BFS
+std::vector<MoveStep> solve_centers_n4(NxNCube& cube);
+
+// post-process flat move sequence to collapse redundant moves
+std::vector<Move> collapse_redundant_moves(const std::vector<Move>& moves);
+
 }

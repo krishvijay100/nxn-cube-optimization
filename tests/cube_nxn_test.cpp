@@ -21,6 +21,8 @@ using cube_nxn::legal_move_steps_for_stage;
 using cube_nxn::apply_move_step;
 using cube_nxn::BFSResult;
 using cube_nxn::reduce_bfs;
+using cube_nxn::solve_centers_n4;
+using cube_nxn::collapse_redundant_moves;
 
 namespace {
 
@@ -730,4 +732,113 @@ TEST(ReduceBFS, HonorsNodeCap) {
     auto result = reduce_bfs(start, MatchesTarget{target}, hash_full_state, moves, 5, /*max_nodes=*/50);
     EXPECT_FALSE(result.found);
     EXPECT_LE(result.nodes_explored, 50u + moves.size());   // may overshoot slightly per outer iteration
+}
+
+namespace {
+
+bool all_centers_solved_n4(const NxNCube& c) {
+    if (c.n() != 4) return false;
+    const int slots[4][2] = {{1,1}, {1,2}, {2,1}, {2,2}};
+    for (int f = 0; f < NUM_FACES; ++f) {
+        const uint8_t expected = static_cast<uint8_t>(f);
+        for (const auto& s : slots) {
+            if (c.sticker(f, s[0], s[1]) != expected) return false;
+        }
+    }
+    return true;
+}
+
+}
+
+TEST(SolveCentersN4, MonochromeAfterShortScrambles) {
+    for (uint64_t seed = 1; seed <= 3; ++seed) {
+        NxNCube c(4);
+        auto scramble = random_scramble(4, 8, seed);
+        for (const auto& m : scramble) apply_move(c, m);
+
+        auto sequence = solve_centers_n4(c);
+        EXPECT_FALSE(sequence.empty()) << "seed=" << seed << " (BFS failed)";
+        EXPECT_TRUE(all_centers_solved_n4(c))
+            << "seed=" << seed << " (centers not monochrome after solve)";
+    }
+}
+
+TEST(CollapseRedundantMoves, InverseQuarterTurnsCancel) {
+    std::vector<Move> input = {
+        {Face::U, 0, 1, Turn::CW},
+        {Face::U, 0, 1, Turn::CCW},
+    };
+    auto out = collapse_redundant_moves(input);
+    EXPECT_TRUE(out.empty());
+}
+
+TEST(CollapseRedundantMoves, TwoQuartersEqualHalf) {
+    std::vector<Move> input = {
+        {Face::F, 0, 1, Turn::CCW},
+        {Face::F, 0, 1, Turn::CCW},
+    };
+    auto out = collapse_redundant_moves(input);
+    ASSERT_EQ(out.size(), 1u);
+    EXPECT_EQ(out[0].turn, Turn::Half);
+    EXPECT_EQ(out[0].face, Face::F);
+    EXPECT_EQ(out[0].outer_depth, 0);
+    EXPECT_EQ(out[0].inner_depth, 1);
+}
+
+TEST(CollapseRedundantMoves, ThreeQuartersEqualPrime) {
+    std::vector<Move> input = {
+        {Face::R, 0, 0, Turn::CW},
+        {Face::R, 0, 0, Turn::CW},
+        {Face::R, 0, 0, Turn::CW},
+    };
+    auto out = collapse_redundant_moves(input);
+    ASSERT_EQ(out.size(), 1u);
+    EXPECT_EQ(out[0].turn, Turn::CCW);
+    EXPECT_EQ(out[0].face, Face::R);
+}
+
+TEST(CollapseRedundantMoves, CascadingCollapse) {
+    std::vector<Move> input = {
+        {Face::R, 0, 0, Turn::CW},
+        {Face::R, 0, 0, Turn::CW},
+        {Face::R, 0, 0, Turn::CCW},
+    };
+    auto out = collapse_redundant_moves(input);
+    ASSERT_EQ(out.size(), 1u);
+    EXPECT_EQ(out[0].turn, Turn::CW);
+    EXPECT_EQ(out[0].face, Face::R);
+}
+
+TEST(CollapseRedundantMoves, DifferentLayersDoNotCollapse) {
+    std::vector<Move> input = {
+        {Face::R, 0, 0, Turn::CW},   // R
+        {Face::R, 0, 1, Turn::CW},   // Rw
+    };
+    auto out = collapse_redundant_moves(input);
+    EXPECT_EQ(out.size(), 2u);
+}
+
+TEST(CollapseRedundantMoves, ApplyingCollapsedMatchesOriginal) {
+    for (uint64_t seed = 1; seed <= 3; ++seed) {
+        NxNCube scratch(4);
+        auto scramble = random_scramble(4, 8, seed);
+        for (const auto& m : scramble) apply_move(scratch, m);
+        auto steps = solve_centers_n4(scratch);
+        ASSERT_FALSE(steps.empty());
+
+        std::vector<Move> raw;
+        for (const auto& s : steps) for (const auto& m : s) raw.push_back(m);
+
+        auto collapsed = collapse_redundant_moves(raw);
+        EXPECT_LE(collapsed.size(), raw.size());
+
+        NxNCube verify(4);
+        for (const auto& m : scramble) apply_move(verify, m);
+        for (const auto& m : collapsed) apply_move(verify, m);
+
+        for (int i = 0; i < verify.num_stickers(); ++i) {
+            EXPECT_EQ(verify.raw()[i], scratch.raw()[i])
+                << "seed=" << seed << " sticker index=" << i;
+        }
+    }
 }

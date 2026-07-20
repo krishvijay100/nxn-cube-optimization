@@ -75,6 +75,10 @@ target_link_libraries(profile_solve PRIVATE cube solver)
 # keep symbols in the release binary so the profiler can name functions
 target_compile_options(profile_solve PRIVATE -g)
 
+# phase-8 stage-1 demo: print a scramble + center-reduction sequence
+add_executable(reduce_centers_demo tools/reduce_centers_demo.cpp)
+target_link_libraries(reduce_centers_demo PRIVATE cube cube_nxn)
+
 enable_testing()
 add_subdirectory(tests)
 add_subdirectory(benchmarks)

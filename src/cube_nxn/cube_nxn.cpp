@@ -544,4 +544,147 @@ BFSResult reduce_bfs(
     return {false, {}, explored};
 }
 
+namespace {
+
+constexpr int N4_CENTER_SLOTS[4][2] = {{1,1}, {1,2}, {2,1}, {2,2}};
+
+bool face_centers_monochrome(const NxNCube& cube, Face face) {
+    const uint8_t color = static_cast<uint8_t>(face);
+    for (const auto& slot : N4_CENTER_SLOTS) {
+        if (cube.sticker(static_cast<int>(face), slot[0], slot[1]) != color) return false;
+    }
+    return true;
+}
+
+// 64-bit fnv-1a of the full sticker array
+uint64_t fnv1a_full(const NxNCube& c) {
+    uint64_t h = 0xcbf29ce484222325ULL;
+    const uint8_t* p = c.raw();
+    const int n = c.num_stickers();
+    for (int i = 0; i < n; ++i) {
+        h ^= p[i];
+        h *= 0x100000001b3ULL;
+    }
+    return h;
+}
+
+// BFS wrapper that retries at progressively deeper bounds
+std::vector<MoveStep> bfs_with_deepening(
+    const NxNCube& start,
+    const std::function<bool(const NxNCube&)>& is_goal,
+    const std::vector<MoveStep>& moves)
+{
+    const int depths[] = {5, 8, 12};
+    for (int d : depths) {
+        BFSResult r = reduce_bfs(start, is_goal, fnv1a_full, moves, d);
+        if (r.found) return r.sequence;
+    }
+    return {};
+}
+
+}
+
+std::vector<MoveStep> solve_centers_n4(NxNCube& cube) {
+    assert(cube.n() == 4 && "solve_centers_n4 currently supports N=4 only");
+    const auto moves = legal_move_steps_for_stage(4, Stage::Centers);
+
+    std::vector<MoveStep> total_sequence;
+    const Face face_order[6] = {Face::U, Face::D, Face::F, Face::B, Face::L, Face::R};
+    std::vector<Face> completed;   // faces already fully solved
+
+    for (Face face : face_order) {
+        const uint8_t face_color = static_cast<uint8_t>(face);
+        const int face_idx = static_cast<int>(face);
+
+        // slots already filled on the current face during this pass
+        std::vector<std::pair<int, int>> placed_this_face;
+
+        for (const auto& slot : N4_CENTER_SLOTS) {
+            // skip if slot already correct
+            if (cube.sticker(face_idx, slot[0], slot[1]) == face_color) {
+                placed_this_face.push_back({slot[0], slot[1]});
+                continue;
+            }
+
+            const int target_row = slot[0];
+            const int target_col = slot[1];
+            std::vector<std::pair<int, int>> preserve = placed_this_face;
+            std::vector<Face> preserve_faces = completed;
+
+            auto is_goal = [face_color, face_idx, target_row, target_col,
+                            preserve, preserve_faces](const NxNCube& c) {
+                if (c.sticker(face_idx, target_row, target_col) != face_color) return false;
+                for (const auto& s : preserve) {
+                    if (c.sticker(face_idx, s.first, s.second) != face_color) return false;
+                }
+                for (Face f : preserve_faces) {
+                    if (!face_centers_monochrome(c, f)) return false;
+                }
+                return true;
+            };
+
+            auto seq = bfs_with_deepening(cube, is_goal, moves);
+            if (seq.empty()) {
+                // depth 12 was insufficient
+                return {};
+            }
+            for (const auto& s : seq) apply_move_step(cube, s);
+            total_sequence.insert(total_sequence.end(), seq.begin(), seq.end());
+            placed_this_face.push_back({target_row, target_col});
+        }
+
+        completed.push_back(face);
+    }
+    return total_sequence;
+}
+
+namespace {
+
+inline int turn_quarters(Turn t) {
+    switch (t) {
+        case Turn::CW:   return 1;
+        case Turn::Half: return 2;
+        case Turn::CCW:  return 3;
+    }
+    return 0;
+}
+
+inline std::optional<Turn> turn_from_quarters(int q) {
+    q = ((q % 4) + 4) % 4;
+    switch (q) {
+        case 0: return std::nullopt;  // net-zero rotation, drop the move
+        case 1: return Turn::CW;
+        case 2: return Turn::Half;
+        case 3: return Turn::CCW;
+    }
+    return std::nullopt;
+}
+
+inline bool same_layer(const Move& a, const Move& b) {
+    return a.face == b.face
+        && a.outer_depth == b.outer_depth
+        && a.inner_depth == b.inner_depth;
+}
+
+}
+
+std::vector<Move> collapse_redundant_moves(const std::vector<Move>& moves) {
+    std::vector<Move> out;
+    out.reserve(moves.size());
+    for (const Move& m : moves) {
+        if (!out.empty() && same_layer(out.back(), m)) {
+            int q = turn_quarters(out.back().turn) + turn_quarters(m.turn);
+            auto composed = turn_from_quarters(q);
+            if (composed.has_value()) {
+                out.back().turn = *composed;
+            } else {
+                out.pop_back();
+            }
+        } else {
+            out.push_back(m);
+        }
+    }
+    return out;
+}
+
 }

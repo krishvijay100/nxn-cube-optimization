@@ -114,7 +114,6 @@ struct EdgePairResult {
     std::vector<MoveStep> sequence;
     int edges_paired;
 };
-EdgePairResult solve_edges_n4(NxNCube& cube);
 
 EdgePairResult solve_edges_n4_algo(NxNCube& cube);
 

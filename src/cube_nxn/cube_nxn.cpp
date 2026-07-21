@@ -730,19 +730,6 @@ uint64_t fnv1a_full_edge(const NxNCube& c) {
     return h;
 }
 
-std::vector<MoveStep> bfs_deepen_edge(
-    const NxNCube& start,
-    const std::function<bool(const NxNCube&)>& is_goal,
-    const std::vector<MoveStep>& moves)
-{
-    const int depths[] = {5, 8, 12};
-    for (int d : depths) {
-        BFSResult r = reduce_bfs(start, is_goal, fnv1a_full_edge, moves, d);
-        if (r.found) return r.sequence;
-    }
-    return {};
-}
-
 }
 
 namespace {
@@ -832,47 +819,6 @@ EdgePairResult solve_edges_n4_algo(NxNCube& cube) {
         already_paired_indices.push_back(i);
         ++result.edges_paired;
     }
-    return result;
-}
-
-EdgePairResult solve_edges_n4(NxNCube& cube) {
-    assert(cube.n() == 4 && "solve_edges_n4 currently supports N=4 only");
-    const auto moves = legal_move_steps_for_stage(4, Stage::Edges);
-
-    EdgePairResult result{{}, 0};
-
-    std::vector<int> already_paired_indices;
-
-    for (int i = 0; i < 12; ++i) {
-        if (edge_slot_paired(cube, N4_EDGES[i])) {
-            already_paired_indices.push_back(i);
-            ++result.edges_paired;
-            continue;
-        }
-
-        std::vector<int> preserve = already_paired_indices;
-        int target = i;
-        auto is_goal = [target, preserve](const NxNCube& c) {
-            if (!edge_slot_paired(c, N4_EDGES[target])) return false;
-            for (int idx : preserve) {
-                if (!edge_slot_paired(c, N4_EDGES[idx])) return false;
-            }
-            return true;
-        };
-
-        auto seq = bfs_deepen_edge(cube, is_goal, moves);
-        if (seq.empty()) {
-            // BFS exhausted its depth ladder, is expected on the last
-            // edge if parity is present; return what we have and let
-            // next stage handle it
-            return result;
-        }
-        for (const auto& s : seq) apply_move_step(cube, s);
-        result.sequence.insert(result.sequence.end(), seq.begin(), seq.end());
-        already_paired_indices.push_back(i);
-        ++result.edges_paired;
-    }
-
     return result;
 }
 

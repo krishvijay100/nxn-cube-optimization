@@ -24,6 +24,9 @@ using cube_nxn::solve_centers_n4;
 using cube_nxn::collapse_redundant_moves;
 using cube_nxn::solve_edges_n4_algo;
 using cube_nxn::EdgePairResult;
+using cube_nxn::detect_parity_n4;
+using cube_nxn::fix_parity_n4;
+using cube_nxn::ParityState;
 
 namespace {
 
@@ -977,4 +980,37 @@ TEST(SolveEdgesN4Algo, HandConstructedParityVariantA) {
     EXPECT_EQ(edges.edges_paired, 11)
         << "expected exact 11 (OLL-parity code path), got " << edges.edges_paired;
     EXPECT_TRUE(all_centers_solved_n4(cube)) << "algo broke centers on parity input";
+}
+
+TEST(ParityN4, SolvedCubeIsValid) {
+    NxNCube cube(4);
+    EXPECT_EQ(detect_parity_n4(cube), ParityState::Valid);
+    auto fix = fix_parity_n4(cube);
+    EXPECT_TRUE(fix.empty()) << "fix on solved cube should be empty";
+    EXPECT_TRUE(cube.is_solved()) << "fix_parity_n4 must not touch a solved cube";
+}
+
+TEST(ParityN4, FullPipelineProducesValidState) {
+    const int TRIALS = 5;
+    for (int t = 0; t < TRIALS; ++t) {
+        uint64_t seed = 100ULL + t;
+        NxNCube cube(4);
+        auto scramble = random_scramble(4, 20, seed);
+        for (const auto& m : scramble) apply_move(cube, m);
+
+        auto centers_seq = solve_centers_n4(cube);
+        ASSERT_FALSE(centers_seq.empty()) << "seed=" << seed << " stage 1 failed";
+        ASSERT_TRUE(all_centers_solved_n4(cube))
+            << "seed=" << seed << " stage 1 left centers broken";
+
+        auto edges = solve_edges_n4_algo(cube);
+        ASSERT_EQ(edges.edges_paired, 12)
+            << "seed=" << seed << " stage 2 did not color-pair all 12";
+
+        (void)fix_parity_n4(cube);
+        EXPECT_EQ(detect_parity_n4(cube), ParityState::Valid)
+            << "seed=" << seed << " state is not a valid 3x3 after Stage 3";
+        EXPECT_TRUE(all_centers_solved_n4(cube))
+            << "seed=" << seed << " parity fix broke centers";
+    }
 }

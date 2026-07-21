@@ -822,4 +822,193 @@ EdgePairResult solve_edges_n4_algo(NxNCube& cube) {
     return result;
 }
 
+namespace {
+
+struct Edge3x3 {
+    const char* name;
+    uint8_t     color_a;         // face_a color (also the slot's primary face)
+    uint8_t     color_b;         // face_b color
+    uint8_t     primary_color;   // color that means "oriented"
+};
+
+constexpr Edge3x3 EDGES_3x3[12] = {
+    {"UF", 0, 2, 0}, {"UR", 0, 1, 0}, {"UB", 0, 5, 0}, {"UL", 0, 4, 0},
+    {"DF", 3, 2, 3}, {"DR", 3, 1, 3}, {"DB", 3, 5, 3}, {"DL", 3, 4, 3},
+    {"FR", 2, 1, 2}, {"FL", 2, 4, 2}, {"BR", 5, 1, 5}, {"BL", 5, 4, 5},
+};
+
+struct Corner3x3 {
+    const char* name;
+    uint8_t     color_primary;   // U or D color — primary sticker
+    uint8_t     color_b;
+    uint8_t     color_c;
+    Sticker     s[3];            // sticker positions in canonical order (primary first)
+};
+
+constexpr Corner3x3 CORNERS_3x3[8] = {
+    {"UFR", 0, 2, 1, {{Face::U, 3, 3}, {Face::F, 0, 3}, {Face::R, 0, 0}}},
+    {"URB", 0, 1, 5, {{Face::U, 0, 3}, {Face::R, 0, 3}, {Face::B, 0, 0}}},
+    {"UBL", 0, 5, 4, {{Face::U, 0, 0}, {Face::B, 0, 3}, {Face::L, 0, 0}}},
+    {"ULF", 0, 4, 2, {{Face::U, 3, 0}, {Face::L, 0, 3}, {Face::F, 0, 0}}},
+    {"DRF", 3, 1, 2, {{Face::D, 0, 3}, {Face::R, 3, 0}, {Face::F, 3, 3}}},
+    {"DBR", 3, 5, 1, {{Face::D, 3, 3}, {Face::B, 3, 0}, {Face::R, 3, 3}}},
+    {"DLB", 3, 4, 5, {{Face::D, 3, 0}, {Face::L, 3, 0}, {Face::B, 3, 3}}},
+    {"DFL", 3, 2, 4, {{Face::D, 0, 0}, {Face::F, 3, 0}, {Face::L, 3, 3}}},
+};
+
+inline bool same_color_pair(uint8_t a1, uint8_t b1, uint8_t a2, uint8_t b2) {
+    return (a1 == a2 && b1 == b2) || (a1 == b2 && b1 == a2);
+}
+
+bool identify_edge_at_slot(const NxNCube& cube, int slot_idx, int& home_idx, int& orient) {
+    const EdgeSlot& slot = N4_EDGES[slot_idx];
+    const uint8_t ca = cube.sticker(static_cast<int>(slot.w1.a.face),
+                                     slot.w1.a.row, slot.w1.a.col);
+    const uint8_t cb = cube.sticker(static_cast<int>(slot.w1.b.face),
+                                     slot.w1.b.row, slot.w1.b.col);
+    for (int i = 0; i < 12; ++i) {
+        if (same_color_pair(ca, cb, EDGES_3x3[i].color_a, EDGES_3x3[i].color_b)) {
+            home_idx = i;
+            const uint8_t home_primary = EDGES_3x3[i].primary_color;
+            if (ca == home_primary)      orient = 0;
+            else if (cb == home_primary) orient = 1;
+            else return false;
+            return true;
+        }
+    }
+    return false;
+}
+
+bool identify_corner_at_slot(const NxNCube& cube, int slot_idx, int& home_idx, int& orient) {
+    const Corner3x3& slot = CORNERS_3x3[slot_idx];
+    uint8_t cols[3];
+    for (int k = 0; k < 3; ++k) {
+        cols[k] = cube.sticker(static_cast<int>(slot.s[k].face),
+                                slot.s[k].row, slot.s[k].col);
+    }
+    for (int i = 0; i < 8; ++i) {
+        const uint8_t h[3] = {CORNERS_3x3[i].color_primary, CORNERS_3x3[i].color_b, CORNERS_3x3[i].color_c};
+        int match = 0;
+        bool used[3] = {false, false, false};
+        for (int t = 0; t < 3; ++t) {
+            for (int k = 0; k < 3; ++k) {
+                if (!used[k] && cols[k] == h[t]) {
+                    used[k] = true;
+                    ++match;
+                    break;
+                }
+            }
+        }
+        if (match == 3) {
+            home_idx = i;
+            for (int k = 0; k < 3; ++k) {
+                if (cols[k] == CORNERS_3x3[i].color_primary) {
+                    orient = k;
+                    return true;
+                }
+            }
+            return false;
+        }
+    }
+    return false;
+}
+
+// parity sign of a permutation via cycle decomposition; +1 for even, -1 for odd
+int permutation_sign(const int* perm, int n) {
+    std::vector<bool> visited(n, false);
+    int sign = 1;
+    for (int i = 0; i < n; ++i) {
+        if (visited[i]) continue;
+        int length = 0, j = i;
+        while (!visited[j]) {
+            visited[j] = true;
+            j = perm[j];
+            ++length;
+        }
+        if (length % 2 == 0) sign = -sign;
+    }
+    return sign;
+}
+
+struct Analysis {
+    int edge_perm[12];
+    int edge_orient[12];
+    int corner_perm[8];
+    int corner_orient[8];
+    int edge_orient_sum;
+    int corner_orient_sum;
+    int edge_perm_sign;
+    int corner_perm_sign;
+};
+
+bool analyze_3x3_state(const NxNCube& cube, Analysis& out) {
+    for (int i = 0; i < 12; ++i) {
+        if (!identify_edge_at_slot(cube, i, out.edge_perm[i], out.edge_orient[i])) {
+            return false;
+        }
+    }
+    for (int i = 0; i < 8; ++i) {
+        if (!identify_corner_at_slot(cube, i, out.corner_perm[i], out.corner_orient[i])) {
+            return false;
+        }
+    }
+    int eo_sum = 0, co_sum = 0;
+    for (int i = 0; i < 12; ++i) eo_sum += out.edge_orient[i];
+    for (int i = 0; i < 8;  ++i) co_sum += out.corner_orient[i];
+    out.edge_orient_sum   = eo_sum % 2;
+    out.corner_orient_sum = co_sum % 3;
+    out.edge_perm_sign    = permutation_sign(out.edge_perm, 12);
+    out.corner_perm_sign  = permutation_sign(out.corner_perm, 8);
+    return true;
+}
+
+// standard 4x4 parity fix algorithms
+MoveStep parse_alg(const char* s) {
+    auto v = parse_scramble(s);
+    assert(v.has_value() && "parity alg failed to parse");
+    return *v;
+}
+
+const MoveStep& oll_parity_alg() {
+    static const MoveStep alg = parse_alg("Rw2 B2 U2 Lw U2 Rw' U2 Rw U2 F2 Rw F2 Lw' B2 Rw2");
+    return alg;
+}
+
+const MoveStep& pll_parity_alg() {
+    static const MoveStep alg = parse_alg("2R2 U2 2R2 Uw2 2R2 Uw2");
+    return alg;
+}
+
+}
+
+ParityState detect_parity_n4(const NxNCube& cube) {
+    assert(cube.n() == 4 && "detect_parity_n4 currently supports N=4 only");
+    Analysis a;
+    if (!analyze_3x3_state(cube, a)) {
+        return ParityState::Both;
+    }
+    const bool oll = (a.edge_orient_sum != 0);
+    const bool pll = (a.edge_perm_sign != a.corner_perm_sign);
+    if (oll && pll) return ParityState::Both;
+    if (oll)        return ParityState::OLL;
+    if (pll)        return ParityState::PLL;
+    return ParityState::Valid;
+}
+
+std::vector<MoveStep> fix_parity_n4(NxNCube& cube) {
+    std::vector<MoveStep> out;
+    const ParityState p = detect_parity_n4(cube);
+    if (p == ParityState::OLL || p == ParityState::Both) {
+        const MoveStep& alg = oll_parity_alg();
+        apply_move_step(cube, alg);
+        out.push_back(alg);
+    }
+    if (p == ParityState::PLL || p == ParityState::Both) {
+        const MoveStep& alg = pll_parity_alg();
+        apply_move_step(cube, alg);
+        out.push_back(alg);
+    }
+    return out;
+}
+
 }

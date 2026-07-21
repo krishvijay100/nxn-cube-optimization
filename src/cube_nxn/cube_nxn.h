@@ -117,6 +117,18 @@ struct EdgePairResult {
 
 EdgePairResult solve_edges_n4_algo(NxNCube& cube);
 
+// parity detection + fix
+enum class ParityState : uint8_t {
+    Valid,   // no fix needed
+    OLL,     // one wing flipped in place
+    PLL,     // edge/corner perm sign mismatch
+    Both,    // both problems present
+};
+
+ParityState detect_parity_n4(const NxNCube& cube);
+
+std::vector<MoveStep> fix_parity_n4(NxNCube& cube);
+
 // post-process flat move sequence to collapse redundant moves
 std::vector<Move> collapse_redundant_moves(const std::vector<Move>& moves);
 

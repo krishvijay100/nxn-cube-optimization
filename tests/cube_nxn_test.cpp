@@ -27,6 +27,9 @@ using cube_nxn::EdgePairResult;
 using cube_nxn::detect_parity_n4;
 using cube_nxn::fix_parity_n4;
 using cube_nxn::ParityState;
+using cube_nxn::to_cube_state_3x3;
+using cube_nxn::to_nxn_move;
+using cube_nxn::finish_as_3x3;
 
 namespace {
 
@@ -1012,5 +1015,80 @@ TEST(ParityN4, FullPipelineProducesValidState) {
             << "seed=" << seed << " state is not a valid 3x3 after Stage 3";
         EXPECT_TRUE(all_centers_solved_n4(cube))
             << "seed=" << seed << " parity fix broke centers";
+    }
+}
+
+TEST(ToCubeState3x3, MatchesDirectCubeStateAfterSequence) {
+    struct MovePair { const char* nxn; cube::Move c3; };
+    const MovePair MOVES[] = {
+        {"U",  cube::Move::U},  {"U'", cube::Move::U_prime}, {"U2", cube::Move::U2},
+        {"D",  cube::Move::D},  {"D'", cube::Move::D_prime}, {"D2", cube::Move::D2},
+        {"R",  cube::Move::R},  {"R'", cube::Move::R_prime}, {"R2", cube::Move::R2},
+        {"L",  cube::Move::L},  {"L'", cube::Move::L_prime}, {"L2", cube::Move::L2},
+        {"F",  cube::Move::F},  {"F'", cube::Move::F_prime}, {"F2", cube::Move::F2},
+        {"B",  cube::Move::B},  {"B'", cube::Move::B_prime}, {"B2", cube::Move::B2},
+    };
+    const int NUM_MOVES = sizeof(MOVES) / sizeof(MOVES[0]);
+
+    for (uint64_t seed = 0; seed < 20; ++seed) {
+        NxNCube nxn(4);
+        cube::CubeState direct = cube::solved_cube();
+        uint64_t s = seed * 2654435761ULL + 1;
+        for (int i = 0; i < 25; ++i) {
+            s = s * 6364136223846793005ULL + 1442695040888963407ULL;
+            int idx = (s >> 32) % NUM_MOVES;
+            auto m_nxn = parse_move(MOVES[idx].nxn);
+            ASSERT_TRUE(m_nxn.has_value());
+            apply_move(nxn, *m_nxn);
+            cube::apply_move(direct, MOVES[idx].c3);
+        }
+
+        auto converted = to_cube_state_3x3(nxn);
+        ASSERT_TRUE(converted.has_value()) << "seed=" << seed;
+        for (int i = 0; i < cube::NUM_CORNERS; ++i) {
+            EXPECT_EQ(converted->corner_positions[i],    direct.corner_positions[i])    << "seed=" << seed << " cp[" << i << "]";
+            EXPECT_EQ(converted->corner_orientations[i], direct.corner_orientations[i]) << "seed=" << seed << " co[" << i << "]";
+        }
+        for (int i = 0; i < cube::NUM_EDGES; ++i) {
+            EXPECT_EQ(converted->edge_positions[i],    direct.edge_positions[i])    << "seed=" << seed << " ep[" << i << "]";
+            EXPECT_EQ(converted->edge_orientations[i], direct.edge_orientations[i]) << "seed=" << seed << " eo[" << i << "]";
+        }
+    }
+}
+
+TEST(ToNxnMove, RoundTripThroughApplyMatchesDirect) {
+    for (uint8_t v = 0; v < 18; ++v) {
+        NxNCube nxn(4);
+        cube::CubeState direct = cube::solved_cube();
+        cube::Move c3 = static_cast<cube::Move>(v);
+        apply_move(nxn, to_nxn_move(c3));
+        cube::apply_move(direct, c3);
+        auto converted = to_cube_state_3x3(nxn);
+        ASSERT_TRUE(converted.has_value());
+        for (int i = 0; i < cube::NUM_CORNERS; ++i) {
+            EXPECT_EQ(converted->corner_positions[i],    direct.corner_positions[i])    << "move=" << int(v);
+            EXPECT_EQ(converted->corner_orientations[i], direct.corner_orientations[i]) << "move=" << int(v);
+        }
+    }
+}
+
+TEST(FinishAs3x3, SolvesFullyReducedN4Cube) {
+    const int TRIALS = 3;
+    for (int t = 0; t < TRIALS; ++t) {
+        uint64_t seed = 200ULL + t;
+        NxNCube cube(4);
+        auto scramble = random_scramble(4, 20, seed);
+        for (const auto& m : scramble) apply_move(cube, m);
+
+        auto centers_seq = solve_centers_n4(cube);
+        ASSERT_FALSE(centers_seq.empty()) << "seed=" << seed;
+        auto edges = solve_edges_n4_algo(cube);
+        ASSERT_EQ(edges.edges_paired, 12) << "seed=" << seed;
+        (void)fix_parity_n4(cube);
+        ASSERT_EQ(detect_parity_n4(cube), ParityState::Valid) << "seed=" << seed;
+
+        auto solution = finish_as_3x3(cube);
+        EXPECT_FALSE(solution.empty()) << "seed=" << seed << " Kociemba returned empty";
+        EXPECT_TRUE(cube.is_solved()) << "seed=" << seed << " NxN not solved after Kociemba";
     }
 }

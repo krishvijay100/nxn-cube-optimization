@@ -66,6 +66,8 @@ target_include_directories(solver PUBLIC src)
 target_link_libraries(solver PUBLIC cube)
 target_compile_options(solver PRIVATE -Wall -Wextra -Wpedantic)
 
+target_link_libraries(cube_nxn PUBLIC cube solver)
+
 add_executable(nxn_cube app/main.cpp)
 target_link_libraries(nxn_cube PRIVATE cube)
 

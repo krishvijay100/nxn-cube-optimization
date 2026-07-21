@@ -8,6 +8,8 @@
 #include <unordered_set>
 #include <vector>
 
+#include "solver/ida.h"
+
 namespace cube_nxn {
 
 NxNCube::NxNCube(int n) : n_(n), stickers_(NUM_FACES * n * n) {
@@ -1007,6 +1009,58 @@ std::vector<MoveStep> fix_parity_n4(NxNCube& cube) {
         const MoveStep& alg = pll_parity_alg();
         apply_move_step(cube, alg);
         out.push_back(alg);
+    }
+    return out;
+}
+
+namespace {
+
+constexpr int N4_EDGE_SLOT_TO_CUBE[12]     = {1, 0, 3, 2, 5, 4, 7, 6, 8, 11, 10, 9};
+constexpr int EDGES_3X3_HOME_TO_CUBE[12]   = {1, 0, 3, 2, 5, 4, 7, 6, 8, 9, 11, 10};
+constexpr int CORNER_SLOT_REMAP[8]         = {0, 3, 2, 1, 4, 7, 6, 5};
+constexpr int N4_EDGE_ORIENT_FLIP[12] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1};
+
+}
+
+std::optional<cube::CubeState> to_cube_state_3x3(const NxNCube& cube) {
+    assert(cube.n() == 4 && "to_cube_state_3x3 currently supports N=4 only");
+    Analysis a;
+    if (!analyze_3x3_state(cube, a)) return std::nullopt;
+
+    cube::CubeState c{};
+    for (int i = 0; i < 12; ++i) {
+        const int dst = N4_EDGE_SLOT_TO_CUBE[i];
+        c.edge_positions[dst]    = static_cast<uint8_t>(EDGES_3X3_HOME_TO_CUBE[a.edge_perm[i]]);
+        c.edge_orientations[dst] = static_cast<uint8_t>(a.edge_orient[i] ^ N4_EDGE_ORIENT_FLIP[i]);
+    }
+    for (int i = 0; i < 8; ++i) {
+        const int dst = CORNER_SLOT_REMAP[i];
+        c.corner_positions[dst]    = static_cast<uint8_t>(CORNER_SLOT_REMAP[a.corner_perm[i]]);
+        c.corner_orientations[dst] = static_cast<uint8_t>((3 - a.corner_orient[i]) % 3);
+    }
+    return c;
+}
+
+Move to_nxn_move(cube::Move m) {
+    const uint8_t v = static_cast<uint8_t>(m);
+    const Face face_map[6] = {Face::U, Face::D, Face::R, Face::L, Face::F, Face::B};
+    const Turn turn_map[3] = {Turn::CW, Turn::CCW, Turn::Half};
+    return Move{face_map[v / 3], 0, 0, turn_map[v % 3]};
+}
+
+std::vector<Move> finish_as_3x3(NxNCube& cube) {
+    auto state_opt = to_cube_state_3x3(cube);
+    if (!state_opt) return {};
+
+    const auto solution_3x3 = cube::solver::solve_parallel(*state_opt, 8);
+    if (solution_3x3.empty() && !cube::is_solved(*state_opt)) return {};
+
+    std::vector<Move> out;
+    out.reserve(solution_3x3.size());
+    for (cube::Move m3 : solution_3x3) {
+        Move mn = to_nxn_move(m3);
+        apply_move(cube, mn);
+        out.push_back(mn);
     }
     return out;
 }

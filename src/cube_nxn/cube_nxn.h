@@ -8,6 +8,8 @@
 #include <string_view>
 #include <vector>
 
+#include "cube/cube.h"
+
 namespace cube_nxn {
 
 // wca face convention; solved cube has stickers[face_id * n*n + i] == face_id for every i
@@ -131,5 +133,14 @@ std::vector<MoveStep> fix_parity_n4(NxNCube& cube);
 
 // post-process flat move sequence to collapse redundant moves
 std::vector<Move> collapse_redundant_moves(const std::vector<Move>& moves);
+
+// convert reduced NxN cube into CubeState used by the Kociemba solver
+std::optional<cube::CubeState> to_cube_state_3x3(const NxNCube& cube);
+
+// convert a 3x3 solver move into an NxN outer-face move
+Move to_nxn_move(cube::Move m);
+
+// finish reduced NxN cube by handing to Kociemba
+std::vector<Move> finish_as_3x3(NxNCube& cube);
 
 }

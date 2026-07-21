@@ -110,6 +110,14 @@ BFSResult reduce_bfs(
 // solve centers on a 4x4 cube one face at a time via BFS
 std::vector<MoveStep> solve_centers_n4(NxNCube& cube);
 
+struct EdgePairResult {
+    std::vector<MoveStep> sequence;
+    int edges_paired;
+};
+EdgePairResult solve_edges_n4(NxNCube& cube);
+
+EdgePairResult solve_edges_n4_algo(NxNCube& cube);
+
 // post-process flat move sequence to collapse redundant moves
 std::vector<Move> collapse_redundant_moves(const std::vector<Move>& moves);
 

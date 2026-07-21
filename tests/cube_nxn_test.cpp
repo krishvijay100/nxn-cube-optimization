@@ -19,10 +19,12 @@ using cube_nxn::Stage;
 using cube_nxn::MoveStep;
 using cube_nxn::legal_move_steps_for_stage;
 using cube_nxn::apply_move_step;
-using cube_nxn::BFSResult;
 using cube_nxn::reduce_bfs;
 using cube_nxn::solve_centers_n4;
 using cube_nxn::collapse_redundant_moves;
+using cube_nxn::solve_edges_n4;
+using cube_nxn::solve_edges_n4_algo;
+using cube_nxn::EdgePairResult;
 
 namespace {
 
@@ -841,4 +843,186 @@ TEST(CollapseRedundantMoves, ApplyingCollapsedMatchesOriginal) {
                 << "seed=" << seed << " sticker index=" << i;
         }
     }
+}
+
+TEST(SolveEdgesN4, AtLeastElevenEdgesPairedAndCentersIntact) {
+    NxNCube cube(4);
+    auto scramble = random_scramble(4, 3, 7);
+    for (const auto& m : scramble) apply_move(cube, m);
+
+    auto centers_seq = solve_centers_n4(cube);
+    ASSERT_FALSE(centers_seq.empty()) << "stage 1 failed";
+    ASSERT_TRUE(all_centers_solved_n4(cube)) << "stage 1 left centers broken";
+
+    auto edges = solve_edges_n4(cube);
+    EXPECT_GE(edges.edges_paired, 11) << "expected >=11 paired, got " << edges.edges_paired;
+    EXPECT_TRUE(all_centers_solved_n4(cube)) << "stage 2 broke centers";
+}
+
+TEST(SolveEdgesN4Algo, SmokeTestSmallScramble) {
+    NxNCube cube(4);
+    auto scramble = random_scramble(4, 3, 7);
+    for (const auto& m : scramble) apply_move(cube, m);
+
+    auto centers_seq = solve_centers_n4(cube);
+    ASSERT_FALSE(centers_seq.empty()) << "stage 1 failed";
+    ASSERT_TRUE(all_centers_solved_n4(cube)) << "stage 1 left centers broken";
+
+    auto edges = solve_edges_n4_algo(cube);
+    EXPECT_GE(edges.edges_paired, 11) << "expected >=11 paired, got " << edges.edges_paired;
+    EXPECT_TRUE(all_centers_solved_n4(cube)) << "algo stage 2 broke centers";
+}
+
+TEST(SolveEdgesN4Algo, MediumScrambleAcrossSeeds) {
+    for (uint64_t seed = 1; seed <= 5; ++seed) {
+        NxNCube cube(4);
+        auto scramble = random_scramble(4, 8, seed);
+        for (const auto& m : scramble) apply_move(cube, m);
+
+        auto centers_seq = solve_centers_n4(cube);
+        ASSERT_FALSE(centers_seq.empty()) << "stage 1 failed seed=" << seed;
+        ASSERT_TRUE(all_centers_solved_n4(cube)) << "stage 1 broke centers seed=" << seed;
+
+        auto edges = solve_edges_n4_algo(cube);
+        EXPECT_GE(edges.edges_paired, 11) << "seed=" << seed;
+        EXPECT_TRUE(all_centers_solved_n4(cube)) << "algo stage 2 broke centers seed=" << seed;
+    }
+}
+
+TEST(SolveEdgesN4Algo, PropertyManySeeds) {
+    const int TRIALS = 40;
+    const int SCRAMBLE_LEN = 30;
+    int total_paired_12 = 0;
+    int total_paired_11 = 0;
+    int failures = 0;
+    for (int t = 0; t < TRIALS; ++t) {
+        uint64_t seed = 1000ULL + t;
+        NxNCube cube(4);
+        auto scramble = random_scramble(4, SCRAMBLE_LEN, seed);
+        for (const auto& m : scramble) apply_move(cube, m);
+
+        auto centers_seq = solve_centers_n4(cube);
+        if (centers_seq.empty() || !all_centers_solved_n4(cube)) {
+            ADD_FAILURE() << "stage 1 failed seed=" << seed;
+            ++failures;
+            continue;
+        }
+
+        auto edges = solve_edges_n4_algo(cube);
+        if (!all_centers_solved_n4(cube)) {
+            ADD_FAILURE() << "algo stage 2 broke centers seed=" << seed;
+            ++failures;
+            continue;
+        }
+        if (edges.edges_paired == 12) ++total_paired_12;
+        else if (edges.edges_paired == 11) ++total_paired_11;
+        else {
+            ADD_FAILURE() << "seed=" << seed << " paired=" << edges.edges_paired;
+            ++failures;
+        }
+    }
+    std::cerr << "[PropertyManySeeds] 12-paired=" << total_paired_12
+              << " 11-paired=" << total_paired_11
+              << " failures=" << failures << " / " << TRIALS << "\n";
+    EXPECT_EQ(failures, 0);
+    EXPECT_EQ(total_paired_12 + total_paired_11, TRIALS);
+}
+
+TEST(SolveEdgesN4Algo, HeavyProperty) {
+    if (std::getenv("CUBE_N4_HEAVY") == nullptr) {
+        GTEST_SKIP() << "set CUBE_N4_HEAVY=1 to run the 200-trial property test";
+    }
+    const int TRIALS = 200;
+    const int SCRAMBLE_LEN = 30;
+    int total_paired_12 = 0;
+    int total_paired_11 = 0;
+    int failures = 0;
+    for (int t = 0; t < TRIALS; ++t) {
+        uint64_t seed = 500000ULL + t;
+        NxNCube cube(4);
+        auto scramble = random_scramble(4, SCRAMBLE_LEN, seed);
+        for (const auto& m : scramble) apply_move(cube, m);
+
+        auto centers_seq = solve_centers_n4(cube);
+        if (centers_seq.empty() || !all_centers_solved_n4(cube)) {
+            ADD_FAILURE() << "stage 1 failed seed=" << seed;
+            ++failures;
+            continue;
+        }
+
+        EdgePairResult edges = solve_edges_n4_algo(cube);
+        if (!all_centers_solved_n4(cube)) {
+            ADD_FAILURE() << "algo stage 2 broke centers seed=" << seed;
+            ++failures;
+            continue;
+        }
+        if (edges.edges_paired == 12) ++total_paired_12;
+        else if (edges.edges_paired == 11) ++total_paired_11;
+        else {
+            ADD_FAILURE() << "seed=" << seed << " paired=" << edges.edges_paired;
+            ++failures;
+        }
+    }
+    std::cerr << "[HeavyProperty] 12-paired=" << total_paired_12
+              << " 11-paired=" << total_paired_11
+              << " failures=" << failures << " / " << TRIALS << "\n";
+    EXPECT_EQ(failures, 0);
+}
+
+namespace {
+
+void induce_parity_variant_a(NxNCube& c) {
+    const uint8_t a = c.sticker(static_cast<int>(Face::L), 1, 3);
+    const uint8_t b = c.sticker(static_cast<int>(Face::F), 1, 0);
+    c.set_sticker(static_cast<int>(Face::L), 1, 3, b);
+    c.set_sticker(static_cast<int>(Face::F), 1, 0, a);
+}
+
+void induce_parity_variant_b(NxNCube& c) {
+    const uint8_t a = c.sticker(static_cast<int>(Face::L), 2, 3);
+    const uint8_t b = c.sticker(static_cast<int>(Face::F), 2, 0);
+    c.set_sticker(static_cast<int>(Face::L), 2, 3, b);
+    c.set_sticker(static_cast<int>(Face::F), 2, 0, a);
+}
+
+void induce_parity_variant_c(NxNCube& c) {
+    const uint8_t a = c.sticker(static_cast<int>(Face::L), 1, 3);
+    const uint8_t b = c.sticker(static_cast<int>(Face::F), 2, 0);
+    c.set_sticker(static_cast<int>(Face::L), 1, 3, b);
+    c.set_sticker(static_cast<int>(Face::F), 2, 0, a);
+}
+
+}
+
+TEST(SolveEdgesN4Algo, HandConstructedParityVariantA) {
+    NxNCube cube(4);
+    induce_parity_variant_a(cube);
+    ASSERT_TRUE(all_centers_solved_n4(cube)) << "hand-construction touched centers";
+
+    auto edges = solve_edges_n4_algo(cube);
+    EXPECT_EQ(edges.edges_paired, 11)
+        << "expected exact 11 (OLL-parity code path), got " << edges.edges_paired;
+    EXPECT_TRUE(all_centers_solved_n4(cube)) << "algo broke centers on parity input";
+}
+
+TEST(SolveEdgesN4Algo, HandConstructedParityVariantB) {
+    NxNCube cube(4);
+    induce_parity_variant_b(cube);
+    ASSERT_TRUE(all_centers_solved_n4(cube)) << "hand-construction touched centers";
+
+    auto edges = solve_edges_n4_algo(cube);
+    EXPECT_EQ(edges.edges_paired, 11)
+        << "expected exact 11 (OLL-parity code path), got " << edges.edges_paired;
+    EXPECT_TRUE(all_centers_solved_n4(cube)) << "algo broke centers on parity input";
+}
+
+TEST(SolveEdgesN4Algo, HandConstructedParityVariantC) {
+    NxNCube cube(4);
+    induce_parity_variant_c(cube);
+    ASSERT_TRUE(all_centers_solved_n4(cube)) << "hand-construction touched centers";
+
+    auto edges = solve_edges_n4_algo(cube);
+    EXPECT_EQ(edges.edges_paired, 11)
+        << "expected exact 11 (OLL-parity code path), got " << edges.edges_paired;
+    EXPECT_TRUE(all_centers_solved_n4(cube)) << "algo broke centers on parity input";
 }

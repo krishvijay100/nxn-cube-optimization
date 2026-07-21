@@ -33,3 +33,8 @@ ROADMAP.md
 
 benchmarks/*.md
 !benchmarks/BASELINE.md
+
+# local-only verification tools not needed in the remote repo
+tools/py_verify/
+tools/verify/
+tools/dump_state.cpp

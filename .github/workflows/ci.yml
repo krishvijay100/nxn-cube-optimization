@@ -6,7 +6,8 @@ on:
   pull_request:
 
 jobs:
-  build-and-test:
+  cpp-tests:
+    name: C++ tests + Python bindings
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -28,14 +29,49 @@ jobs:
       - name: Run C++ tests + python bindings test
         run: ctest --test-dir build --output-on-failure
 
+  service-tests:
+    name: FastAPI service tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Ninja
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build pybind module
+        run: cmake --build build --target nxn_cube_py
+
       - name: Install FastAPI service deps
         run: pip install -e "service[dev]"
 
       - name: Run FastAPI service tests
         run: PYTHONPATH="$PWD/build/bindings" pytest service/tests -v
 
-      - name: Build Docker image
-        run: docker build -t nxn-cube:ci .
+  docker:
+    name: Docker build + smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image (with layer cache)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          tags: nxn-cube:ci
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Smoke test Docker image
         run: |

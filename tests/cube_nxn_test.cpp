@@ -30,6 +30,8 @@ using cube_nxn::ParityState;
 using cube_nxn::to_cube_state_3x3;
 using cube_nxn::to_nxn_move;
 using cube_nxn::finish_as_3x3;
+using cube_nxn::solve_nxn;
+using cube_nxn::SolveResult;
 
 namespace {
 
@@ -1091,4 +1093,45 @@ TEST(FinishAs3x3, SolvesFullyReducedN4Cube) {
         EXPECT_FALSE(solution.empty()) << "seed=" << seed << " Kociemba returned empty";
         EXPECT_TRUE(cube.is_solved()) << "seed=" << seed << " NxN not solved after Kociemba";
     }
+}
+
+TEST(SolveNxN, SolvesAcrossSeeds) {
+    const int TRIALS = 5;
+    for (int t = 0; t < TRIALS; ++t) {
+        uint64_t seed = 300ULL + t;
+        NxNCube cube(4);
+        auto scramble = random_scramble(4, 25, seed);
+        for (const auto& m : scramble) apply_move(cube, m);
+
+        SolveResult r = solve_nxn(cube);
+        EXPECT_TRUE(r.ok)          << "seed=" << seed;
+        EXPECT_TRUE(cube.is_solved()) << "seed=" << seed;
+        EXPECT_FALSE(r.moves.empty()) << "seed=" << seed;
+        EXPECT_GT(r.stage_lengths.centers, 0)  << "seed=" << seed;
+        EXPECT_GT(r.stage_lengths.edges, 0)    << "seed=" << seed;
+        EXPECT_GT(r.stage_lengths.kociemba, 0) << "seed=" << seed;
+        EXPECT_GE(r.stage_lengths.parity, 0)   << "seed=" << seed;
+    }
+}
+
+TEST(SolveNxN, EmittedMoveListActuallySolvesFromScratch) {
+    NxNCube scrambled(4);
+    auto scramble = random_scramble(4, 25, 12345ULL);
+    for (const auto& m : scramble) apply_move(scrambled, m);
+
+    NxNCube scratch = scrambled;
+    SolveResult r = solve_nxn(scratch);
+    ASSERT_TRUE(r.ok);
+
+    for (const auto& m : r.moves) apply_move(scrambled, m);
+    EXPECT_TRUE(scrambled.is_solved())
+        << "replaying returned move list on the original scramble should solve it";
+}
+
+TEST(SolveNxN, SolvedInputProducesNoOp) {
+    NxNCube cube(4);
+    SolveResult r = solve_nxn(cube);
+    EXPECT_TRUE(r.ok);
+    EXPECT_TRUE(cube.is_solved());
+    EXPECT_TRUE(r.moves.empty()) << "solved cube should produce empty solution";
 }

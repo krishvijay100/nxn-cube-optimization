@@ -1065,4 +1065,46 @@ std::vector<Move> finish_as_3x3(NxNCube& cube) {
     return out;
 }
 
+namespace {
+
+int flatten_into(std::vector<Move>& dst, const std::vector<MoveStep>& stages) {
+    int count = 0;
+    for (const auto& step : stages) {
+        for (const auto& m : step) {
+            dst.push_back(m);
+            ++count;
+        }
+    }
+    return count;
+}
+
+}
+
+SolveResult solve_nxn(NxNCube& cube) {
+    assert(cube.n() == 4 && "solve_nxn currently supports N=4 only");
+
+    SolveResult result{};
+    std::vector<Move> raw;
+
+    const auto centers = solve_centers_n4(cube);
+    result.stage_lengths.centers = flatten_into(raw, centers);
+
+    const auto edges = solve_edges_n4_algo(cube);
+    if (edges.edges_paired != 12) return result;
+    result.stage_lengths.edges = flatten_into(raw, edges.sequence);
+
+    const auto parity = fix_parity_n4(cube);
+    result.stage_lengths.parity = flatten_into(raw, parity);
+    if (detect_parity_n4(cube) != ParityState::Valid) return result;
+
+    const auto kociemba = finish_as_3x3(cube);
+    if (!cube.is_solved()) return result;
+    for (const auto& m : kociemba) raw.push_back(m);
+    result.stage_lengths.kociemba = static_cast<int>(kociemba.size());
+
+    result.moves = collapse_redundant_moves(raw);
+    result.ok = true;
+    return result;
+}
+
 }

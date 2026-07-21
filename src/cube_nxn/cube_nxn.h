@@ -143,4 +143,20 @@ Move to_nxn_move(cube::Move m);
 // finish reduced NxN cube by handing to Kociemba
 std::vector<Move> finish_as_3x3(NxNCube& cube);
 
+// per-stage move counts
+struct SolveStageLengths {
+    int centers;
+    int edges;
+    int parity;
+    int kociemba;
+};
+
+struct SolveResult {
+    bool ok;
+    std::vector<Move> moves;
+    SolveStageLengths stage_lengths;
+};
+
+// top-level solver, chains all four reduction stages + Kociemba
+SolveResult solve_nxn(NxNCube& cube);
 }

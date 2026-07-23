@@ -64,6 +64,37 @@ std::vector<EdgeSlotG> enumerate_edge_slots(int n) {
             out.push_back(EdgeSlotG{edge_id, EdgeFlavor::Middle, -1, 0});
         }
     }
+}
+
+namespace {
+
+inline Move mk_outer(Face f, Turn t) { return Move{f, 0, 0, t}; }
+
+inline Move mk_slice(Face f, int d, Turn t) {
+    assert(d >= 1);
+    return Move{f, d - 1, d - 1, t};
+}
+
+inline Move mk_wide(Face f, int d, Turn t) {
+    assert(d >= 2);
+    return Move{f, 0, d - 1, t};
+}
+
+inline Turn inverse_turn(Turn t) {
+    if (t == Turn::CW)  return Turn::CCW;
+    if (t == Turn::CCW) return Turn::CW;
+    return Turn::Half;
+}
+
+inline Move inverse_move(const Move& m) {
+    return Move{m.face, m.outer_depth, m.inner_depth, inverse_turn(m.turn)};
+}
+
+MoveStep inverse_step(const MoveStep& step) {
+    MoveStep out;
+    out.reserve(step.size());
+    for (auto it = step.rbegin(); it != step.rend(); ++it) out.push_back(inverse_move(*it));
     return out;
 }
-}  // namespace cube_nxn
+}
+}

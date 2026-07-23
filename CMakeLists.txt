@@ -49,6 +49,7 @@ target_compile_options(cube PRIVATE -Wall -Wextra -Wpedantic)
 
 add_library(cube_nxn
     src/cube_nxn/cube_nxn.cpp
+    src/cube_nxn/reduction_general.cpp
 )
 target_include_directories(cube_nxn PUBLIC src)
 target_compile_options(cube_nxn PRIVATE -Wall -Wextra -Wpedantic)

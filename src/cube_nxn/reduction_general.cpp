@@ -254,5 +254,78 @@ MoveStep oll_parity_general(int k) {
     };
 }
 
+std::vector<Move> setup_moves_for_n(int n) {
+    std::vector<Move> moves;
+    for (int f = 0; f < 6; ++f) {
+        for (Turn t : {Turn::CW, Turn::Half, Turn::CCW}) {
+            moves.push_back(mk_outer(static_cast<Face>(f), t));
+        }
+    }
+    for (int f = 0; f < 6; ++f) {
+        for (int d = 2; d < n; ++d) {
+            for (Turn t : {Turn::CW, Turn::Half, Turn::CCW}) {
+                moves.push_back(mk_slice(static_cast<Face>(f), d, t));
+            }
+        }
+    }
+    return moves;
+}
+
+// a position within an orbit packed into a single uint16
+using Pos = uint16_t;
+// encode (face, r, c) into a Pos
+inline Pos encode_pos(int face, int r, int c) {
+    return static_cast<Pos>((face << 12) | ((r & 0x3F) << 6) | (c & 0x3F));
+}
+
+inline void decode_pos(Pos p, int& face, int& r, int& c) {
+    face = (p >> 12) & 0xF;
+    r = (p >> 6) & 0x3F;
+    c = p & 0x3F;
+}
+
+// maps each position in the orbit to an index
+struct OrbitGraph {
+    std::vector<Pos>   positions;
+    std::vector<int>   pos_to_index;
+    std::vector<Move>  moves;
+    std::vector<std::vector<int>> perm;
+    int  n_cube = 0;
+};
+
+// permutation + the concrete cube-move word realizing it
+struct PermWord {
+    std::vector<int> perm;
+    MoveStep word;
+};
+
+std::vector<int> identity_perm(int n) {
+    std::vector<int> p(n);
+    for (int i = 0; i < n; ++i) p[i] = i;
+    return p;
+}
+
+bool is_identity_perm(const std::vector<int>& p) {
+    for (int i = 0; i < static_cast<int>(p.size()); ++i)
+        if (p[i] != i) return false;
+    return true;
+}
+
+std::vector<int> compose_perm(const std::vector<int>& a,
+                              const std::vector<int>& b) {
+    assert(a.size() == b.size());
+    std::vector<int> out(a.size());
+    for (int i = 0; i < static_cast<int>(a.size()); ++i) out[i] = b[a[i]];
+    return out;
+}
+
+PermWord inverse_pw(const PermWord& a) {
+    PermWord out;
+    out.perm.resize(a.perm.size());
+    for (int i = 0; i < static_cast<int>(a.perm.size()); ++i) out.perm[a.perm[i]] = i;
+    out.word = inverse_step(a.word);
+    return out;
+}
+
 }
 }

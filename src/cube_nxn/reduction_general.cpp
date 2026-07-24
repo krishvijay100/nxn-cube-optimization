@@ -327,5 +327,351 @@ PermWord inverse_pw(const PermWord& a) {
     return out;
 }
 
+OrbitGraph build_orbit_graph(int n, const std::function<bool(int,int,int)>& in_orbit,
+                             const std::vector<Move>& move_set) {
+    OrbitGraph g;
+    g.n_cube = n;
+    g.pos_to_index.assign(1 << 16, -1);
+    g.moves = move_set;
+    for (int f = 0; f < NUM_FACES; ++f) {
+        for (int r = 0; r < n; ++r) {
+            for (int c = 0; c < n; ++c) {
+                if (in_orbit(f, r, c)) {
+                    Pos p = encode_pos(f, r, c);
+                    g.pos_to_index[p] = static_cast<int>(g.positions.size());
+                    g.positions.push_back(p);
+                }
+            }
+        }
+    }
+    const int M = static_cast<int>(move_set.size());
+    g.perm.assign(g.positions.size(), std::vector<int>(M, -1));
+    assert(g.positions.size() < 128);
+    for (int m_idx = 0; m_idx < M; ++m_idx) {
+        NxNCube marker(n);
+        for (int i = 0; i < static_cast<int>(g.positions.size()); ++i) {
+            int f, r, c; decode_pos(g.positions[i], f, r, c);
+            marker.set_sticker(f, r, c, static_cast<uint8_t>(128 + i));
+        }
+        apply_move(marker, move_set[m_idx]);
+        for (int dst_idx = 0; dst_idx < static_cast<int>(g.positions.size()); ++dst_idx) {
+            int f, r, c; decode_pos(g.positions[dst_idx], f, r, c);
+            uint8_t v = marker.sticker(f, r, c);
+            if (v >= 128 && v < 128 + (int)g.positions.size()) {
+                int src = v - 128;
+                g.perm[src][m_idx] = dst_idx;
+            }
+        }
+    }
+    return g;
+}
+
+
+// discover the 3 action slots of commutator on a solved cube
+struct ActionTriple { int source_idx; int target_idx; int buffer_idx; };
+
+ActionTriple detect_action_triple(const OrbitGraph& g, const MoveStep& alg) {
+    const int n = g.n_cube;
+    NxNCube marker(n);
+    assert(g.positions.size() < 128);
+    for (int i = 0; i < static_cast<int>(g.positions.size()); ++i) {
+        int f, r, c; decode_pos(g.positions[i], f, r, c);
+        marker.set_sticker(f, r, c, static_cast<uint8_t>(128 + i));
+    }
+    for (const auto& m : alg) apply_move(marker, m);
+    std::vector<int> perm_after(g.positions.size(), -1);
+    for (int dst = 0; dst < static_cast<int>(g.positions.size()); ++dst) {
+        int f, r, c; decode_pos(g.positions[dst], f, r, c);
+        uint8_t v = marker.sticker(f, r, c);
+        if (v >= 128 && v < 128 + (int)g.positions.size()) perm_after[dst] = v - 128;
+    }
+    ActionTriple t{-1, -1, -1};
+    for (int i = 0; i < static_cast<int>(g.positions.size()); ++i) {
+        if (perm_after[i] == -1 || perm_after[i] == i) continue;
+        int a = i;
+        int b = -1, c = -1;
+        for (int j = 0; j < static_cast<int>(g.positions.size()); ++j) {
+            if (perm_after[j] == a) { b = j; break; }
+        }
+        if (b < 0 || b == a) continue;
+        for (int j = 0; j < static_cast<int>(g.positions.size()); ++j) {
+            if (perm_after[j] == b) { c = j; break; }
+        }
+        if (c < 0 || c == a || c == b) continue;
+        if (perm_after[a] != c) continue;
+        t = {a, b, c};
+        break;
+    }
+    return t;
+}
+
+// home face for a position in an orbit (the face on which its color matches)
+inline int home_face(const OrbitGraph& g, int pos_idx) {
+    int f, r, c; decode_pos(g.positions[pos_idx], f, r, c);
+    (void)r; (void)c;
+    return f;
+}
+
+// read the color currently at orbit position pos_idx
+inline uint8_t read_color(const NxNCube& cube, const OrbitGraph& g, int pos_idx) {
+    int f, r, c; decode_pos(g.positions[pos_idx], f, r, c);
+    return cube.sticker(f, r, c);
+}
+
+struct DisjointSet {
+    std::vector<int> parent, rank;
+    explicit DisjointSet(int n) : parent(n), rank(n, 0) {
+        for (int i = 0; i < n; ++i) parent[i] = i;
+    }
+    int find(int x) { return parent[x] == x ? x : parent[x] = find(parent[x]); }
+    bool unite(int a, int b) {
+        a = find(a); b = find(b);
+        if (a == b) return false;
+        if (rank[a] < rank[b]) std::swap(a, b);
+        parent[b] = a;
+        if (rank[a] == rank[b]) ++rank[a];
+        return true;
+    }
+};
+
+std::vector<PermWord> build_connected_conjugate_generators(
+        const OrbitGraph& g, const MoveStep& alg, const ActionTriple& slots) {
+    const int K = static_cast<int>(g.positions.size());
+    const int64_t state_count = static_cast<int64_t>(K) * K * K;
+    auto encode = [K](int a, int b, int c) {
+        return static_cast<int64_t>(a) * K * K + static_cast<int64_t>(b) * K + c;
+    };
+    auto decode = [K](int64_t s, int& a, int& b, int& c) {
+        c = static_cast<int>(s % K);
+        b = static_cast<int>((s / K) % K);
+        a = static_cast<int>(s / (K * K));
+    };
+
+    const int64_t start = encode(slots.source_idx, slots.target_idx, slots.buffer_idx);
+    std::vector<int64_t> parent(state_count, -1);
+    std::vector<int16_t> parent_move(state_count, -1);
+    std::vector<uint8_t> visited(state_count, 0);
+    std::queue<int64_t> q;
+    q.push(start);
+    visited[start] = 1;
+
+    DisjointSet dsu(K);
+    int components = K;
+    std::vector<PermWord> generators;
+
+    auto maybe_add = [&](int64_t state) {
+        int a, b, c; decode(state, a, b, c);
+        bool joined = false;
+        if (dsu.unite(a, b)) { --components; joined = true; }
+        if (dsu.unite(b, c)) { --components; joined = true; }
+        if (!joined && !generators.empty()) return;
+
+        MoveStep setup_from_base;
+        for (int64_t s = state; s != start; s = parent[s])
+            setup_from_base.push_back(g.moves[parent_move[s]]);
+        std::reverse(setup_from_base.begin(), setup_from_base.end());
+
+        MoveStep word = inverse_step(setup_from_base);
+        word.insert(word.end(), alg.begin(), alg.end());
+        word.insert(word.end(), setup_from_base.begin(), setup_from_base.end());
+        std::vector<int> perm = identity_perm(K);
+        perm[a] = b; perm[b] = c; perm[c] = a;
+        generators.push_back(PermWord{std::move(perm), std::move(word)});
+    };
+
+    maybe_add(start);
+    while (!q.empty() && components > 1) {
+        const int64_t cur = q.front(); q.pop();
+        int a, b, c; decode(cur, a, b, c);
+        for (int m = 0; m < static_cast<int>(g.moves.size()); ++m) {
+            const int na = g.perm[a][m], nb = g.perm[b][m], nc = g.perm[c][m];
+            if (na < 0 || nb < 0 || nc < 0) continue;
+            const int64_t ns = encode(na, nb, nc);
+            if (visited[ns]) continue;
+            visited[ns] = 1;
+            parent[ns] = cur;
+            parent_move[ns] = static_cast<int16_t>(m);
+            q.push(ns);
+            maybe_add(ns);
+        }
+    }
+    if (components != 1) {
+        if (std::getenv("CUBE_DEBUG_EXACT_CENTERS"))
+            std::fprintf(stderr, "[exact-centers] K=%d conjugate hypergraph components=%d\n",
+                         K, components);
+        return {};
+    }
+    return generators;
+}
+
+bool permutation_is_even(const std::vector<int>& p) {
+    int inversions = 0;
+    for (int i = 0; i < static_cast<int>(p.size()); ++i)
+        for (int j = i + 1; j < static_cast<int>(p.size()); ++j)
+            if (p[i] > p[j]) inversions ^= 1;
+    return inversions == 0;
+}
+
+std::array<int,3> triple_from_3cycle(const std::vector<int>& p) {
+    for (int a = 0; a < static_cast<int>(p.size()); ++a) {
+        if (p[a] == a) continue;
+        const int b = p[a], c = p[b];
+        if (a != b && b != c && c != a && p[c] == a)
+            return {a, b, c};
+    }
+    return {-1, -1, -1};
+}
+
+std::vector<int> make_3cycle_perm(int K, int a, int b, int c) {
+    std::vector<int> p = identity_perm(K);
+    p[a] = b; p[b] = c; p[c] = a;
+    return p;
+}
+
+// decompose an arbitrary even permutation into oriented 3-cycles
+bool decompose_even_perm(const std::vector<int>& target,
+                         std::vector<std::array<int,3>>& cycles_out) {
+    if (!permutation_is_even(target)) return false;
+    const int K = static_cast<int>(target.size());
+    std::vector<int> rem = target;
+    std::vector<std::vector<int>> eliminators;
+
+    for (;;) {
+        int a = -1;
+        for (int i = 0; i < K; ++i) {
+            if (rem[i] != i && rem[rem[i]] != i) { a = i; break; }
+        }
+        if (a < 0) break;
+        const int b = rem[a], c = rem[b];
+        auto op = make_3cycle_perm(K, b, a, c);
+        rem = compose_perm(rem, op);
+        eliminators.push_back(std::move(op));
+    }
+
+    std::vector<std::pair<int,int>> swaps;
+    std::vector<uint8_t> used(K, 0);
+    for (int i = 0; i < K; ++i) {
+        if (rem[i] == i || used[i]) continue;
+        const int j = rem[i];
+        if (j < 0 || j >= K || rem[j] != i) return false;
+        used[i] = used[j] = 1;
+        swaps.emplace_back(i, j);
+    }
+    if (swaps.size() % 2 != 0) return false;
+
+    for (size_t s = 0; s < swaps.size(); s += 2) {
+        const int v[4] = {swaps[s].first, swaps[s].second,
+                          swaps[s+1].first, swaps[s+1].second};
+        std::vector<int> pair_perm = identity_perm(K);
+        pair_perm[v[0]] = v[1]; pair_perm[v[1]] = v[0];
+        pair_perm[v[2]] = v[3]; pair_perm[v[3]] = v[2];
+        std::vector<std::vector<int>> candidates;
+        for (int i = 0; i < 4; ++i)
+            for (int j = 0; j < 4; ++j) if (j != i)
+                for (int k = 0; k < 4; ++k) if (k != i && k != j)
+                    candidates.push_back(make_3cycle_perm(K, v[i], v[j], v[k]));
+        bool found = false;
+        for (const auto& a : candidates) {
+            for (const auto& b : candidates) {
+                if (is_identity_perm(compose_perm(compose_perm(pair_perm, a), b))) {
+                    rem = compose_perm(compose_perm(rem, a), b);
+                    eliminators.push_back(a);
+                    eliminators.push_back(b);
+                    found = true;
+                    break;
+                }
+            }
+            if (found) break;
+        }
+        if (!found) return false;
+    }
+    if (!is_identity_perm(rem)) return false;
+
+    cycles_out.clear();
+    for (auto it = eliminators.rbegin(); it != eliminators.rend(); ++it) {
+        auto inv = inverse_pw(PermWord{*it, {}}).perm;
+        auto triple = triple_from_3cycle(inv);
+        if (triple[0] < 0) return false;
+        cycles_out.push_back(triple);
+    }
+
+    std::vector<int> check = identity_perm(K);
+    for (const auto& t : cycles_out)
+        check = compose_perm(check, make_3cycle_perm(K, t[0], t[1], t[2]));
+    return check == target;
+}
+
+// turn the abstract 3-cycle decomposition into cube moves
+bool realize_3cycles(const std::vector<PermWord>& generators,
+                     const std::vector<std::array<int,3>>& requested,
+                     MoveStep& solution_out) {
+    if (generators.empty()) return false;
+    const int K = static_cast<int>(generators.front().perm.size());
+    std::vector<PermWord> alpha;
+    alpha.reserve(generators.size() * 2);
+    for (const auto& g : generators) {
+        alpha.push_back(g);
+        alpha.push_back(inverse_pw(g));
+    }
+    const auto base = triple_from_3cycle(generators.front().perm);
+    if (base[0] < 0) return false;
+    auto encode = [K](int a, int b, int c) {
+        return static_cast<int64_t>(a) * K * K + static_cast<int64_t>(b) * K + c;
+    };
+    auto decode = [K](int64_t s, int& a, int& b, int& c) {
+        c = static_cast<int>(s % K);
+        b = static_cast<int>((s / K) % K);
+        a = static_cast<int>(s / (K * K));
+    };
+    const int64_t count = static_cast<int64_t>(K) * K * K;
+    const int64_t start = encode(base[0], base[1], base[2]);
+    std::vector<int64_t> parent(count, -1);
+    std::vector<int16_t> parent_gen(count, -1);
+    std::vector<uint8_t> visited(count, 0), needed(count, 0);
+    int remaining = 0;
+    for (const auto& t : requested) {
+        const int64_t s = encode(t[0], t[1], t[2]);
+        if (!needed[s]) { needed[s] = 1; ++remaining; }
+    }
+    std::queue<int64_t> q;
+    q.push(start); visited[start] = 1;
+    if (needed[start]) { needed[start] = 0; --remaining; }
+    while (!q.empty() && remaining > 0) {
+        const int64_t cur = q.front(); q.pop();
+        int a, b, c; decode(cur, a, b, c);
+        for (int gi = 0; gi < static_cast<int>(alpha.size()); ++gi) {
+            const auto& p = alpha[gi].perm;
+            const int64_t ns = encode(p[a], p[b], p[c]);
+            if (visited[ns]) continue;
+            visited[ns] = 1;
+            parent[ns] = cur;
+            parent_gen[ns] = static_cast<int16_t>(gi);
+            q.push(ns);
+            if (needed[ns]) { needed[ns] = 0; --remaining; }
+        }
+    }
+    if (remaining != 0) return false;
+
+    solution_out.clear();
+    for (const auto& t : requested) {
+        const int64_t goal = encode(t[0], t[1], t[2]);
+        std::vector<int> path;
+        for (int64_t s = goal; s != start; s = parent[s]) {
+            if (s < 0 || parent[s] < 0) return false;
+            path.push_back(parent_gen[s]);
+        }
+        std::reverse(path.begin(), path.end());
+        MoveStep conjugator;
+        for (int gi : path)
+            conjugator.insert(conjugator.end(), alpha[gi].word.begin(), alpha[gi].word.end());
+        MoveStep inv = inverse_step(conjugator);
+        solution_out.insert(solution_out.end(), inv.begin(), inv.end());
+        solution_out.insert(solution_out.end(), generators.front().word.begin(),
+                            generators.front().word.end());
+        solution_out.insert(solution_out.end(), conjugator.begin(), conjugator.end());
+    }
+    return true;
+}
+
 }
 }

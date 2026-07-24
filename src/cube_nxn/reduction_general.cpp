@@ -673,5 +673,211 @@ bool realize_3cycles(const std::vector<PermWord>& generators,
     return true;
 }
 
+// complete center-orbit solver
+// note that same-colored centers are interchangeable, so if
+// arbitrary assignment is odd, we will swap the homes of two equal-colored
+// stickers to resolve parity if needed, without affecting the solve
+bool solve_center_orbit_exact(NxNCube& cube, std::vector<MoveStep>& out_seq,
+                              const OrbitGraph& g, const MoveStep& alg) {
+    const int K = static_cast<int>(g.positions.size());
+    if (K == 0) return true;
+    const ActionTriple slots = detect_action_triple(g, alg);
+    if (slots.source_idx < 0) return false;
+
+    std::array<std::vector<int>, NUM_FACES> current_by_color;
+    std::array<std::vector<int>, NUM_FACES> homes_by_color;
+    for (int i = 0; i < K; ++i) {
+        const int color = static_cast<int>(read_color(cube, g, i));
+        if (color < 0 || color >= NUM_FACES) return false;
+        current_by_color[color].push_back(i);
+        homes_by_color[home_face(g, i)].push_back(i);
+    }
+
+    std::vector<int> target = identity_perm(K);  // current position -> assigned home
+    for (int color = 0; color < NUM_FACES; ++color) {
+        if (current_by_color[color].size() != homes_by_color[color].size()) return false;
+        for (int j = 0; j < static_cast<int>(current_by_color[color].size()); ++j)
+            target[current_by_color[color][j]] = homes_by_color[color][j];
+    }
+    if (!permutation_is_even(target)) {
+        bool fixed = false;
+        for (int color = 0; color < NUM_FACES && !fixed; ++color) {
+            if (current_by_color[color].size() < 2) continue;
+            std::swap(target[current_by_color[color][0]], target[current_by_color[color][1]]);
+            fixed = true;
+        }
+        if (!fixed || !permutation_is_even(target)) return false;
+    }
+
+    const auto generators = build_connected_conjugate_generators(g, alg, slots);
+    if (generators.empty()) return false;
+    std::vector<std::array<int,3>> cycles;
+    if (!decompose_even_perm(target, cycles)) return false;
+    MoveStep solution;
+    if (!realize_3cycles(generators, cycles, solution)) return false;
+
+    NxNCube trial = cube;
+    apply_move_step(trial, solution);
+    for (int i = 0; i < K; ++i)
+        if (read_color(trial, g, i) != static_cast<uint8_t>(home_face(g, i))) return false;
+    cube = std::move(trial);
+    if (!solution.empty()) out_seq.push_back(std::move(solution));
+    return true;
 }
+
+std::vector<int> conjugate_component_vertices(const OrbitGraph& g,
+                                               const ActionTriple& slots) {
+    const int K = static_cast<int>(g.positions.size());
+    auto encode = [K](int a, int b, int c) {
+        return static_cast<int64_t>(a) * K * K + static_cast<int64_t>(b) * K + c;
+    };
+    auto decode = [K](int64_t s, int& a, int& b, int& c) {
+        c = static_cast<int>(s % K);
+        b = static_cast<int>((s / K) % K);
+        a = static_cast<int>(s / (K * K));
+    };
+    const int64_t count = static_cast<int64_t>(K) * K * K;
+    const int64_t start = encode(slots.source_idx, slots.target_idx, slots.buffer_idx);
+    std::vector<uint8_t> visited(count, 0), vertex_seen(K, 0);
+    std::queue<int64_t> q;
+    visited[start] = 1; q.push(start);
+    while (!q.empty()) {
+        const int64_t cur = q.front(); q.pop();
+        int a, b, c; decode(cur, a, b, c);
+        vertex_seen[a] = vertex_seen[b] = vertex_seen[c] = 1;
+        for (int m = 0; m < static_cast<int>(g.moves.size()); ++m) {
+            const int na = g.perm[a][m], nb = g.perm[b][m], nc = g.perm[c][m];
+            if (na < 0 || nb < 0 || nc < 0) continue;
+            const int64_t ns = encode(na, nb, nc);
+            if (!visited[ns]) { visited[ns] = 1; q.push(ns); }
+        }
+    }
+    std::vector<int> out;
+    for (int i = 0; i < K; ++i) if (vertex_seen[i]) out.push_back(i);
+    return out;
+}
+
+OrbitGraph induced_orbit_graph(const OrbitGraph& full, const std::vector<int>& vertices) {
+    OrbitGraph sub;
+    sub.n_cube = full.n_cube;
+    sub.moves = full.moves;
+    sub.pos_to_index.assign(1 << 16, -1);
+    std::vector<int> old_to_new(full.positions.size(), -1);
+    for (int old : vertices) {
+        const int ni = static_cast<int>(sub.positions.size());
+        old_to_new[old] = ni;
+        sub.positions.push_back(full.positions[old]);
+        sub.pos_to_index[full.positions[old]] = ni;
+    }
+    sub.perm.assign(vertices.size(), std::vector<int>(sub.moves.size(), -1));
+    for (int ni = 0; ni < static_cast<int>(vertices.size()); ++ni) {
+        const int old = vertices[ni];
+        for (int m = 0; m < static_cast<int>(sub.moves.size()); ++m) {
+            const int old_dst = full.perm[old][m];
+            if (old_dst >= 0) sub.perm[ni][m] = old_to_new[old_dst];
+        }
+    }
+    return sub;
+}
+
+
+}
+
+std::vector<MoveStep> solve_centers_general(NxNCube& cube) {
+    const int n = cube.n();
+    assert(n >= 3);
+    std::vector<MoveStep> out;
+    if (n == 3) return out;
+
+    // max slice depth for X-center rings
+    const int max_regular_d = (n % 2 == 1) ? (n - 1) / 2 : n / 2;
+
+    // x-centers, ring-by-ring (smallest ring first for smaller orbit size)
+    for (int d = max_regular_d; d >= 2; --d) {
+        const int ring = n + 1 - 2 * d;
+        auto in_orbit = [ring, n](int, int r, int c) {
+            const int dr = 2 * r - (n - 1);
+            const int dc = 2 * c - (n - 1);
+            if (classify_center(dr, dc) != CenterFlavor::XCenter) return false;
+            return center_ring(dr, dc) == ring;
+        };
+        OrbitGraph g = build_orbit_graph(n, in_orbit, setup_moves_for_n(n));
+        if (!solve_center_orbit_exact(cube, out, g, xcenter_3cycle(d))) return out;
+    }
+    // plus-centers (odd N)
+    if (n % 2 == 1) {
+        for (int d = max_regular_d; d >= 2; --d) {
+            const int ring = n + 1 - 2 * d;
+            auto in_orbit = [ring, n](int, int r, int c) {
+                const int dr = 2 * r - (n - 1);
+                const int dc = 2 * c - (n - 1);
+                if (classify_center(dr, dc) != CenterFlavor::PlusCenter) return false;
+                return center_ring(dr, dc) == ring;
+            };
+            OrbitGraph g = build_orbit_graph(n, in_orbit, setup_moves_for_n(n));
+            if (!solve_center_orbit_exact(cube, out, g, plus_center_3cycle(d, n))) return out;
+        }
+    }
+
+    // true obliques may split into independent components even when their
+    // coordinate taxonomy puts them in one ring; discover those components
+    // from the conjugate action and solve each one independently
+    if (n >= 6) {
+        std::vector<int> oblique_rings;
+        for (int r = 1; r <= n - 2; ++r) {
+            for (int c = 1; c <= n - 2; ++c) {
+                const int dr = 2 * r - (n - 1);
+                const int dc = 2 * c - (n - 1);
+                if (classify_center(dr, dc) != CenterFlavor::Oblique) continue;
+                int ring_key = std::abs(dr) * 100 + std::abs(dc);
+                if (std::abs(dr) > std::abs(dc)) ring_key = std::abs(dc) * 100 + std::abs(dr);
+                if (std::find(oblique_rings.begin(), oblique_rings.end(), ring_key) == oblique_rings.end()) {
+                    oblique_rings.push_back(ring_key);
+                }
+            }
+        }
+        for (int ring_key : oblique_rings) {
+            int a = ring_key / 100;
+            int b = ring_key % 100;
+            auto in_orbit = [n, a, b](int, int r, int c) {
+                const int dr = 2 * r - (n - 1);
+                const int dc = 2 * c - (n - 1);
+                if (classify_center(dr, dc) != CenterFlavor::Oblique) return false;
+                int adr = std::abs(dr), adc = std::abs(dc);
+                return std::min(adr, adc) == a && std::max(adr, adc) == b;
+            };
+            OrbitGraph full = build_orbit_graph(n, in_orbit, setup_moves_for_n(n));
+            
+            std::vector<uint8_t> covered(full.positions.size(), 0);
+            std::unordered_set<std::string> component_keys;
+            for (int chir : {1, -1}) {
+                MoveStep alg = find_clean_oblique_alg(n, a, b, chir);
+                if (alg.empty()) continue;
+                ActionTriple action = detect_action_triple(full, alg);
+                if (action.source_idx < 0) continue;
+                std::vector<int> vertices = conjugate_component_vertices(full, action);
+                std::sort(vertices.begin(), vertices.end());
+                std::string key;
+                for (int v : vertices) key.push_back(static_cast<char>(v));
+                if (!component_keys.insert(key).second) continue;
+                OrbitGraph component = induced_orbit_graph(full, vertices);
+                if (!solve_center_orbit_exact(cube, out, component, alg)) return out;
+                for (int v : vertices) covered[v] = 1;
+            }
+            if (std::find(covered.begin(), covered.end(), 0) != covered.end()) return out;
+        }
+    }
+
+    return out;
+}
+
+bool centers_reduced_general(const NxNCube& cube) {
+    const int n = cube.n();
+    for (int f = 0; f < NUM_FACES; ++f)
+        for (int r = 1; r < n - 1; ++r)
+            for (int c = 1; c < n - 1; ++c)
+                if (cube.sticker(f, r, c) != static_cast<uint8_t>(f)) return false;
+    return true;
+}
+
 }

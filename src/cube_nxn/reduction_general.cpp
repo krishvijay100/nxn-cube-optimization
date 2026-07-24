@@ -205,5 +205,54 @@ static MoveStep find_clean_oblique_alg(int n, int a, int b, int chir) {
     return {};  // no clean candidate found in this family
 }
 
+MoveStep middle_edge_3cycle(int n) {
+    assert(n % 2 == 1 && n >= 5);
+    const int m_depth = (n + 1) / 2;
+    return {
+        mk_slice(Face::L, m_depth, Turn::Half),
+        mk_outer(Face::U, Turn::CW),
+        mk_slice(Face::L, m_depth, Turn::CW),
+        mk_outer(Face::U, Turn::Half),
+        mk_slice(Face::L, m_depth, Turn::CCW),
+        mk_outer(Face::U, Turn::CW),
+        mk_slice(Face::L, m_depth, Turn::Half),
+    };
+}
+
+// flip exactly two middle-edges in place
+MoveStep middle_edge_flip(int n) {
+    assert(n % 2 == 1 && n >= 5);
+    const int m = (n + 1) / 2;
+    return {
+        mk_slice(Face::R, m, Turn::CCW), mk_outer(Face::U, Turn::CW),
+        mk_slice(Face::R, m, Turn::CCW), mk_outer(Face::U, Turn::CW),
+        mk_slice(Face::R, m, Turn::CCW), mk_outer(Face::U, Turn::Half),
+        mk_slice(Face::R, m, Turn::CW),  mk_outer(Face::U, Turn::CW),
+        mk_slice(Face::R, m, Turn::CW),  mk_outer(Face::U, Turn::CW),
+        mk_slice(Face::R, m, Turn::CW),  mk_outer(Face::U, Turn::Half),
+    };
+}
+
+MoveStep oll_parity_general(int k) {
+    const int d = k + 1;   // inner-slice depth
+    return {
+        mk_slice(Face::R, d, Turn::Half),
+        mk_outer(Face::B, Turn::Half),
+        mk_outer(Face::U, Turn::Half),
+        mk_slice(Face::L, d, Turn::CW),
+        mk_outer(Face::U, Turn::Half),
+        mk_slice(Face::R, d, Turn::CCW),
+        mk_outer(Face::U, Turn::Half),
+        mk_slice(Face::R, d, Turn::CW),
+        mk_outer(Face::U, Turn::Half),
+        mk_outer(Face::F, Turn::Half),
+        mk_slice(Face::R, d, Turn::CW),
+        mk_outer(Face::F, Turn::Half),
+        mk_slice(Face::L, d, Turn::CCW),
+        mk_outer(Face::B, Turn::Half),
+        mk_slice(Face::R, d, Turn::Half),
+    };
+}
+
 }
 }

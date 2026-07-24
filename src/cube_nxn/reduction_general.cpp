@@ -64,6 +64,7 @@ std::vector<EdgeSlotG> enumerate_edge_slots(int n) {
             out.push_back(EdgeSlotG{edge_id, EdgeFlavor::Middle, -1, 0});
         }
     }
+    return out;
 }
 
 namespace {
@@ -95,6 +96,55 @@ MoveStep inverse_step(const MoveStep& step) {
     out.reserve(step.size());
     for (auto it = step.rbegin(); it != step.rend(); ++it) out.push_back(inverse_move(*it));
     return out;
+}
+
+// commutator templates
+MoveStep xcenter_3cycle(int d) {
+    return {
+        mk_slice(Face::R, d, Turn::CCW),
+        mk_outer(Face::D, Turn::CCW),
+        mk_slice(Face::B, d, Turn::CW),
+        mk_outer(Face::D, Turn::CW),
+        mk_slice(Face::R, d, Turn::CW),
+        mk_outer(Face::D, Turn::CCW),
+        mk_slice(Face::B, d, Turn::CCW),
+        mk_outer(Face::D, Turn::CW),
+    };
+}
+
+MoveStep wing_3cycle(int d) {
+    assert(d >= 2);
+    auto wide_or_outer = [](int width, Turn t) -> Move {
+        if (width == 1) return mk_outer(Face::R, t);
+        return mk_wide(Face::R, width, t);
+    };
+    return {
+        wide_or_outer(d - 1, Turn::CW),
+        mk_wide(Face::R, d, Turn::CCW),
+        mk_outer(Face::U, Turn::CW),
+        mk_outer(Face::R, Turn::CW),
+        mk_outer(Face::U, Turn::CCW),
+        mk_wide(Face::R, d, Turn::CW),
+        wide_or_outer(d - 1, Turn::CCW),
+        mk_outer(Face::U, Turn::CW),
+        mk_outer(Face::R, Turn::CCW),
+        mk_outer(Face::U, Turn::CCW),
+    };
+}
+
+MoveStep plus_center_3cycle(int d, int n) {
+    assert(n % 2 == 1);
+    const int e_depth = (n + 1) / 2;
+    return {
+        mk_outer(Face::U, Turn::CW),
+        mk_slice(Face::R, d, Turn::CW),
+        mk_slice(Face::D, e_depth, Turn::Half),
+        mk_slice(Face::R, d, Turn::CCW),
+        mk_outer(Face::U, Turn::CCW),
+        mk_slice(Face::R, d, Turn::CW),
+        mk_slice(Face::D, e_depth, Turn::Half),
+        mk_slice(Face::R, d, Turn::CCW),
+    };
 }
 }
 }

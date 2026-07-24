@@ -880,4 +880,57 @@ bool centers_reduced_general(const NxNCube& cube) {
     return true;
 }
 
+// edge geometry for general N
+
+struct EdgeSticker { Face face; int row; int col; };
+struct EdgeSlotGeom {
+    Face face_a, face_b;
+    std::function<EdgeSticker(int t, int n)> stickers_a;
+    std::function<EdgeSticker(int t, int n)> stickers_b;
+};
+
+std::vector<EdgeSlotGeom> build_edge_geom() {
+    std::vector<EdgeSlotGeom> out(12);
+    out[0] = {Face::U, Face::F,
+              [](int t, int n){ return EdgeSticker{Face::U, n-1, t}; },
+              [](int t, int){ return EdgeSticker{Face::F, 0,   t}; }};
+    out[1] = {Face::U, Face::R,
+              [](int t, int n){ return EdgeSticker{Face::U, n-1-t, n-1}; },
+              [](int t, int){ return EdgeSticker{Face::R, 0, t}; }};
+    out[2] = {Face::U, Face::B,
+              [](int t, int n){ return EdgeSticker{Face::U, 0, n-1-t}; },
+              [](int t, int){ return EdgeSticker{Face::B, 0, t}; }};
+    out[3] = {Face::U, Face::L,
+              [](int t, int){ return EdgeSticker{Face::U, t, 0}; },
+              [](int t, int){ return EdgeSticker{Face::L, 0, t}; }};
+    out[4] = {Face::D, Face::F,
+              [](int t, int){ return EdgeSticker{Face::D, 0, t}; },
+              [](int t, int n){ return EdgeSticker{Face::F, n-1, t}; }};
+    out[5] = {Face::D, Face::R,
+              [](int t, int n){ return EdgeSticker{Face::D, t, n-1}; },
+              [](int t, int n){ return EdgeSticker{Face::R, n-1, t}; }};
+    out[6] = {Face::D, Face::B,
+              [](int t, int n){ return EdgeSticker{Face::D, n-1, n-1-t}; },
+              [](int t, int n){ return EdgeSticker{Face::B, n-1, t}; }};
+    out[7] = {Face::D, Face::L,
+              [](int t, int n){ return EdgeSticker{Face::D, n-1-t, 0}; },
+              [](int t, int n){ return EdgeSticker{Face::L, n-1, t}; }};
+    out[8] = {Face::F, Face::R,
+              [](int t, int n){ return EdgeSticker{Face::F, t, n-1}; },
+              [](int t, int){ return EdgeSticker{Face::R, t, 0}; }};
+    out[9] = {Face::R, Face::B,
+              [](int t, int n){ return EdgeSticker{Face::R, t, n-1}; },
+              [](int t, int){ return EdgeSticker{Face::B, t, 0}; }};
+    out[10] = {Face::B, Face::L,
+              [](int t, int n){ return EdgeSticker{Face::B, t, n-1}; },
+              [](int t, int){ return EdgeSticker{Face::L, t, 0}; }};
+    out[11] = {Face::L, Face::F,
+              [](int t, int n){ return EdgeSticker{Face::L, t, n-1}; },
+              [](int t, int){ return EdgeSticker{Face::F, t, 0}; }};
+    return out;
+}
+inline std::pair<int,int> wing_ts(int w, int n) {
+    return {w + 1, n - 2 - w};
+}
+
 }

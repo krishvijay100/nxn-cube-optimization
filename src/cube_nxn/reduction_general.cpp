@@ -933,4 +933,198 @@ inline std::pair<int,int> wing_ts(int w, int n) {
     return {w + 1, n - 2 - w};
 }
 
+// piece-tracking wing solver
+
+struct PieceOrbit {
+    int n;
+    int t1, t2;
+    std::vector<EdgeSticker> face_a_stickers;
+    std::vector<EdgeSticker> face_b_stickers;
+    std::vector<int>          home_face_a;
+    std::vector<int>          home_face_b;
+    std::vector<Move>         moves;
+    std::vector<std::vector<int>> perm;
+    // perm_flip[i][m] = true iff applying move m to a piece at slot i lands
+    // its face_b sticker where face_a's tracked position is; needed for middle edges only
+    std::vector<std::vector<bool>> perm_flip;
+};
+
+// build the piece orbit for wing_index w on N-cube (using canonical edge order)
+PieceOrbit build_wing_piece_orbit(int n, int w, const std::vector<EdgeSlotGeom>& edges,
+                                  const std::vector<Move>& move_set) {
+    PieceOrbit p;
+    p.n = n;
+    p.t1 = w + 1;
+    p.t2 = n - 2 - w;
+    for (int e = 0; e < 12; ++e) {
+        for (int side = 0; side < 2; ++side) {
+            int t = (side == 0) ? p.t1 : p.t2;
+            EdgeSticker sa = edges[e].stickers_a(t, n);
+            EdgeSticker sb = edges[e].stickers_b(t, n);
+            p.face_a_stickers.push_back(sa);
+            p.face_b_stickers.push_back(sb);
+            p.home_face_a.push_back(static_cast<int>(edges[e].face_a));
+            p.home_face_b.push_back(static_cast<int>(edges[e].face_b));
+        }
+    }
+    const int K = static_cast<int>(p.face_a_stickers.size());
+    p.moves = move_set;
+    const int M = static_cast<int>(move_set.size());
+    p.perm.assign(K, std::vector<int>(M, -1));
+    p.perm_flip.assign(K, std::vector<bool>(M, false));
+    constexpr int kFaceAOffset = 32;
+    constexpr int kFaceBOffset = 160;
+    for (int m_idx = 0; m_idx < M; ++m_idx) {
+        NxNCube marker(n);
+        for (int i = 0; i < K; ++i) {
+            const EdgeSticker& sa = p.face_a_stickers[i];
+            const EdgeSticker& sb = p.face_b_stickers[i];
+            marker.set_sticker(static_cast<int>(sa.face), sa.row, sa.col, static_cast<uint8_t>(kFaceAOffset + i));
+            marker.set_sticker(static_cast<int>(sb.face), sb.row, sb.col, static_cast<uint8_t>(kFaceBOffset + i));
+        }
+        apply_move(marker, move_set[m_idx]);
+        for (int dst_idx = 0; dst_idx < K; ++dst_idx) {
+            const EdgeSticker& sa = p.face_a_stickers[dst_idx];
+            uint8_t v = marker.sticker(static_cast<int>(sa.face), sa.row, sa.col);
+            int src;
+            bool flipped = false;
+            if (v >= kFaceAOffset && v < kFaceAOffset + K)      src = v - kFaceAOffset;
+            else if (v >= kFaceBOffset && v < kFaceBOffset + K) { src = v - kFaceBOffset; flipped = true; }
+            else continue;
+            p.perm_flip[src][m_idx] = flipped;
+            p.perm[src][m_idx] = dst_idx;
+        }
+    }
+    if (std::getenv("CUBE_DEBUG_EXACT_WINGS")) {
+        int missing = 0;
+        for (int i = 0; i < K; ++i) for (int m = 0; m < M; ++m)
+            if (p.perm[i][m] < 0) {
+                ++missing;
+                if (missing <= 20)
+                    std::fprintf(stderr, "  missing slot=%d edge=%d side=%d move=%s\n",
+                                 i, i/2, i%2, format_move(p.moves[m]).c_str());
+            }
+        std::fprintf(stderr, "[exact-wings] orbit w=%d missing transitions=%d/%d\n",
+                     w, missing, K * M);
+    }
+    return p;
+}
+
+// build the piece orbit for the 12 middle-edge pieces (odd N only, one sticker-pair per edge at t=(n-1)/2)
+PieceOrbit build_middle_piece_orbit(int n, const std::vector<EdgeSlotGeom>& edges,
+                                    const std::vector<Move>& move_set) {
+    PieceOrbit p;
+    p.n = n;
+    const int t_mid = (n - 1) / 2;
+    p.t1 = t_mid;
+    p.t2 = t_mid;
+    for (int e = 0; e < 12; ++e) {
+        EdgeSticker sa = edges[e].stickers_a(t_mid, n);
+        EdgeSticker sb = edges[e].stickers_b(t_mid, n);
+        p.face_a_stickers.push_back(sa);
+        p.face_b_stickers.push_back(sb);
+        p.home_face_a.push_back(static_cast<int>(edges[e].face_a));
+        p.home_face_b.push_back(static_cast<int>(edges[e].face_b));
+    }
+    const int K = static_cast<int>(p.face_a_stickers.size());
+    p.moves = move_set;
+    const int M = static_cast<int>(move_set.size());
+    p.perm.assign(K, std::vector<int>(M, -1));
+    p.perm_flip.assign(K, std::vector<bool>(M, false));
+    constexpr int kFaceAOffset = 32;
+    constexpr int kFaceBOffset = 160;
+    for (int m_idx = 0; m_idx < M; ++m_idx) {
+        NxNCube marker(n);
+        for (int i = 0; i < K; ++i) {
+            const EdgeSticker& sa = p.face_a_stickers[i];
+            const EdgeSticker& sb = p.face_b_stickers[i];
+            marker.set_sticker(static_cast<int>(sa.face), sa.row, sa.col, static_cast<uint8_t>(kFaceAOffset + i));
+            marker.set_sticker(static_cast<int>(sb.face), sb.row, sb.col, static_cast<uint8_t>(kFaceBOffset + i));
+        }
+        apply_move(marker, move_set[m_idx]);
+        for (int dst_idx = 0; dst_idx < K; ++dst_idx) {
+            const EdgeSticker& sa = p.face_a_stickers[dst_idx];
+            uint8_t v = marker.sticker(static_cast<int>(sa.face), sa.row, sa.col);
+            int src;
+            bool flipped;
+            if (v >= kFaceAOffset && v < kFaceAOffset + K)      { src = v - kFaceAOffset; flipped = false; }
+            else if (v >= kFaceBOffset && v < kFaceBOffset + K) { src = v - kFaceBOffset; flipped = true; }
+            else continue;
+            p.perm_flip[src][m_idx] = flipped;
+            p.perm[src][m_idx] = dst_idx;
+        }
+    }
+    return p;
+}
+
+inline std::pair<uint8_t, uint8_t> read_pair(const NxNCube& cube, const PieceOrbit& p, int i) {
+    const EdgeSticker& sa = p.face_a_stickers[i];
+    const EdgeSticker& sb = p.face_b_stickers[i];
+    uint8_t ca = cube.sticker(static_cast<int>(sa.face), sa.row, sa.col);
+    uint8_t cb = cube.sticker(static_cast<int>(sb.face), sb.row, sb.col);
+    if (ca > cb) std::swap(ca, cb);
+    return {ca, cb};
+}
+
+inline std::pair<uint8_t, uint8_t> home_pair(const PieceOrbit& p, int i) {
+    uint8_t a = static_cast<uint8_t>(p.home_face_a[i]);
+    uint8_t b = static_cast<uint8_t>(p.home_face_b[i]);
+    if (a > b) std::swap(a, b);
+    return {a, b};
+}
+
+inline bool piece_solved(const NxNCube& cube, const PieceOrbit& p, int i) {
+    return read_pair(cube, p, i) == home_pair(p, i);
+}
+
+// orientation-sensitive check
+inline bool piece_solved_exact(const NxNCube& cube, const PieceOrbit& p, int i) {
+    const EdgeSticker& sa = p.face_a_stickers[i];
+    const EdgeSticker& sb = p.face_b_stickers[i];
+    uint8_t ca = cube.sticker(static_cast<int>(sa.face), sa.row, sa.col);
+    uint8_t cb = cube.sticker(static_cast<int>(sb.face), sb.row, sb.col);
+    return ca == static_cast<uint8_t>(p.home_face_a[i]) && cb == static_cast<uint8_t>(p.home_face_b[i]);
+}
+
+
+// detect the 3-cycle action of the alg on the piece orbit
+struct WingActionTriple { int source_idx; int target_idx; int buffer_idx; };
+WingActionTriple detect_wing_action(const PieceOrbit& p, const MoveStep& alg) {
+    const int n = p.n;
+    const int K = static_cast<int>(p.face_a_stickers.size());
+    constexpr int kFaceAOffset = 32;
+    constexpr int kFaceBOffset = 160;
+    NxNCube marker(n);
+    for (int i = 0; i < K; ++i) {
+        const EdgeSticker& sa = p.face_a_stickers[i];
+        const EdgeSticker& sb = p.face_b_stickers[i];
+        marker.set_sticker(static_cast<int>(sa.face), sa.row, sa.col, static_cast<uint8_t>(kFaceAOffset + i));
+        marker.set_sticker(static_cast<int>(sb.face), sb.row, sb.col, static_cast<uint8_t>(kFaceBOffset + i));
+    }
+    for (const auto& m : alg) apply_move(marker, m);
+    std::vector<int> perm_after(K, -1);
+    for (int dst = 0; dst < K; ++dst) {
+        const EdgeSticker& sa = p.face_a_stickers[dst];
+        uint8_t v = marker.sticker(static_cast<int>(sa.face), sa.row, sa.col);
+        int src;
+        if (v >= kFaceAOffset && v < kFaceAOffset + K)      src = v - kFaceAOffset;
+        else if (v >= kFaceBOffset && v < kFaceBOffset + K) src = v - kFaceBOffset;
+        else continue;
+        perm_after[dst] = src;
+    }
+    WingActionTriple t{-1, -1, -1};
+    for (int i = 0; i < K; ++i) {
+        if (perm_after[i] == i) continue;
+        int a = i, b = -1, c = -1;
+        for (int j = 0; j < K; ++j) if (perm_after[j] == a) { b = j; break; }
+        if (b < 0 || b == a) continue;
+        for (int j = 0; j < K; ++j) if (perm_after[j] == b) { c = j; break; }
+        if (c < 0 || c == a || c == b) continue;
+        if (perm_after[a] != c) continue;
+        t = {a, b, c};
+        break;
+    }
+    return t;
+}
+
 }

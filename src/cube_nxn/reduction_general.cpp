@@ -146,5 +146,64 @@ MoveStep plus_center_3cycle(int d, int n) {
         mk_slice(Face::R, d, Turn::CCW),
     };
 }
+
+// oblique 3-cycle commutator derivation, self-verifying and returns the first one that works for that exact input
+static MoveStep find_clean_oblique_alg(int n, int a, int b, int chir) {
+    auto is_target = [&](int dr, int dc) {
+        if (classify_center(dr, dc) != CenterFlavor::Oblique) return false;
+        int adr = std::abs(dr), adc = std::abs(dc);
+        if (std::min(adr, adc) != a || std::max(adr, adc) != b) return false;
+        return (dr * dc > 0 ? 1 : -1) == chir;
+    };
+    auto is_clean = [&](const MoveStep& alg) {
+        NxNCube c(n);
+        apply_move_step(c, alg);
+        int target_moved = 0, other_moved = 0;
+        for (int f = 0; f < NUM_FACES; ++f) {
+            for (int r = 0; r < n; ++r) {
+                for (int col = 0; col < n; ++col) {
+                    if (c.sticker(f, r, col) == static_cast<uint8_t>(f)) continue;
+                    const int dr = 2 * r - (n - 1), dc = 2 * col - (n - 1);
+                    if (is_target(dr, dc)) ++target_moved;
+                    else ++other_moved;
+                }
+            }
+        }
+        return other_moved == 0 && target_moved == 3;
+    };
+
+    const Face faces[6] = {Face::U, Face::R, Face::F, Face::D, Face::L, Face::B};
+    const Turn qturns[2] = {Turn::CW, Turn::CCW};
+    for (Face fa : faces) {
+        for (int da = 1; da <= n; ++da) {
+            for (Turn ta : qturns) {
+                const Move A = mk_slice(fa, da, ta);
+                const Move Ainv = mk_slice(fa, da, ta == Turn::CW ? Turn::CCW : Turn::CW);
+                for (Face fb : faces) {
+                    if (fb == fa) continue;
+                    for (Turn tb : qturns) {
+                        const Turn tbInv = (tb == Turn::CW) ? Turn::CCW : Turn::CW;
+                        for (Face fc : faces) {
+                            for (int dc_ = 1; dc_ <= n; ++dc_) {
+                                for (Turn tc : qturns) {
+                                    const Turn tcInv = (tc == Turn::CW) ? Turn::CCW : Turn::CW;
+                                    MoveStep candidate = {
+                                        A,
+                                        mk_outer(fb, tb), mk_slice(fc, dc_, tc), mk_outer(fb, tbInv),
+                                        Ainv,
+                                        mk_outer(fb, tb), mk_slice(fc, dc_, tcInv), mk_outer(fb, tbInv),
+                                    };
+                                    if (is_clean(candidate)) return candidate;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return {};  // no clean candidate found in this family
+}
+
 }
 }

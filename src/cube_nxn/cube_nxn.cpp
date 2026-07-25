@@ -985,6 +985,10 @@ const MoveStep& pll_parity_alg() {
 
 ParityState detect_parity_n4(const NxNCube& cube) {
     assert(cube.n() == 4 && "detect_parity_n4 currently supports N=4 only");
+    return detect_parity_general(cube);
+}
+
+ParityState detect_parity_general(const NxNCube& cube) {
     Analysis a;
     if (!analyze_3x3_state(cube, a)) {
         return ParityState::Both;

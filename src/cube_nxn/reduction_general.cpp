@@ -1438,4 +1438,102 @@ void solve_middles_general(NxNCube& cube, std::vector<MoveStep>& out, int n,
     }
 }
 
+std::vector<MoveStep> solve_edges_general(NxNCube& cube) {
+    const int n = cube.n();
+    assert(n >= 3);
+    if (n == 3) return {};
+
+    std::vector<MoveStep> out;
+    const auto edges = build_edge_geom();
+
+    const int wing_pairs = (n - 2) / 2;
+    for (int w = 0; w < wing_pairs; ++w) {
+        PieceOrbit orbit = build_wing_piece_orbit(n, w, edges, setup_moves_for_n(n));
+        if (!solve_wing_orbit_exact(cube, out, orbit, wing_3cycle(w + 2))) return out;
+    }
+
+
+    // align every inner wing orbit to orbit 0 using pure two-wing flip conjugate
+    PieceOrbit reference = build_wing_piece_orbit(n, 0, edges, setup_moves_for_n(n));
+    for (int w = 1; w < wing_pairs; ++w) {
+        PieceOrbit orbit = build_wing_piece_orbit(n, w, edges, setup_moves_for_n(n));
+        for (int e = 0; e < 12; ++e) {
+            const auto ref = read_ordered_pair(cube, reference, 2 * e);
+            const auto cur = read_ordered_pair(cube, orbit, 2 * e);
+            if (cur == ref) continue;
+            if (cur.first != ref.second || cur.second != ref.first) return out;
+            if (!apply_wing_pair_flip_exact(cube, out, orbit,
+                                            oll_parity_general(w + 1), e)) return out;
+        }
+    }
+
+    ParityState parity = detect_parity_general(cube);
+    if (parity == ParityState::OLL || parity == ParityState::Both) {
+        for (int w = 0; w < wing_pairs; ++w) {
+            PieceOrbit orbit = build_wing_piece_orbit(n, w, edges, setup_moves_for_n(n));
+            if (!apply_wing_pair_flip_exact(cube, out, orbit,
+                                            oll_parity_general(w + 1), 0)) return out;
+        }
+    }
+
+    parity = detect_parity_general(cube);
+    if (parity == ParityState::PLL || parity == ParityState::Both) {
+        for (int w = 0; w < wing_pairs; ++w) {
+            PieceOrbit orbit = build_wing_piece_orbit(n, w, edges, setup_moves_for_n(n));
+            std::vector<int> swap_groups = identity_perm(24);
+            std::swap(swap_groups[0], swap_groups[2]);
+            std::swap(swap_groups[1], swap_groups[3]);
+            if (!apply_wing_permutation_exact(cube, out, orbit,
+                                              wing_3cycle(w + 2), swap_groups)) return out;
+        }
+    }
+
+    return out;
+}
+
+bool wings_reduced_general(const NxNCube& cube) {
+    const int n = cube.n();
+    if (n == 3) return true;
+    const auto edges = build_edge_geom();
+    const int wing_pairs = (n - 2) / 2;
+    for (int e = 0; e < 12; ++e) {
+        std::pair<uint8_t,uint8_t> reference{255,255};
+        for (int w = 0; w < wing_pairs; ++w) {
+            const auto [t1, t2] = wing_ts(w, n);
+            const auto a1 = edges[e].stickers_a(t1, n);
+            const auto b1 = edges[e].stickers_b(t1, n);
+            const auto a2 = edges[e].stickers_a(t2, n);
+            const auto b2 = edges[e].stickers_b(t2, n);
+            const std::pair<uint8_t,uint8_t> p1{
+                cube.sticker((int)a1.face, a1.row, a1.col),
+                cube.sticker((int)b1.face, b1.row, b1.col)};
+            const std::pair<uint8_t,uint8_t> p2{
+                cube.sticker((int)a2.face, a2.row, a2.col),
+                cube.sticker((int)b2.face, b2.row, b2.col)};
+            if (p1 != p2 || p1.first == p1.second) return false;
+            if (w == 0) reference = p1;
+            else if (p1 != reference) return false;
+        }
+    }
+    return true;
+}
+
+std::vector<MoveStep> solve_middles_after_kociemba(NxNCube& cube) {
+    const int n = cube.n();
+    if (n % 2 == 0) return {};
+    std::vector<MoveStep> out;
+    const auto edges = build_edge_geom();
+    solve_middles_general(cube, out, n, edges);
+    return out;
+}
+
+// public accessors
+
+MoveStep xcenter_3cycle_alg(int d)            { return xcenter_3cycle(d); }
+MoveStep wing_3cycle_alg(int d)               { return wing_3cycle(d); }
+MoveStep plus_center_3cycle_alg(int d, int n) { return plus_center_3cycle(d, n); }
+MoveStep oblique_3cycle_alg(int n, int a, int b, int chir) { return find_clean_oblique_alg(n, a, b, chir); }
+MoveStep middle_edge_3cycle_alg(int n)        { return middle_edge_3cycle(n); }
+MoveStep middle_edge_flip_alg(int n)          { return middle_edge_flip(n); }
+
 }  // namespace cube_nxn

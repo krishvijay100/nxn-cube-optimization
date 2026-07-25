@@ -128,6 +128,7 @@ enum class ParityState : uint8_t {
 };
 
 ParityState detect_parity_n4(const NxNCube& cube);
+ParityState detect_parity_general(const NxNCube& cube);
 
 std::vector<MoveStep> fix_parity_n4(NxNCube& cube);
 

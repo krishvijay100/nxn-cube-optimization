@@ -1127,4 +1127,161 @@ WingActionTriple detect_wing_action(const PieceOrbit& p, const MoveStep& alg) {
     return t;
 }
 
+std::vector<PermWord> build_connected_wing_generators(
+        const PieceOrbit& p, const MoveStep& alg, const WingActionTriple& slots) {
+    const int K = static_cast<int>(p.face_a_stickers.size());
+    auto encode = [K](int a, int b, int c) {
+        return static_cast<int64_t>(a) * K * K + static_cast<int64_t>(b) * K + c;
+    };
+    auto decode = [K](int64_t s, int& a, int& b, int& c) {
+        c = static_cast<int>(s % K);
+        b = static_cast<int>((s / K) % K);
+        a = static_cast<int>(s / (K * K));
+    };
+    const int64_t count = static_cast<int64_t>(K) * K * K;
+    const int64_t start = encode(slots.source_idx, slots.target_idx, slots.buffer_idx);
+    std::vector<int64_t> parent(count, -1);
+    std::vector<int16_t> parent_move(count, -1);
+    std::vector<uint8_t> visited(count, 0);
+    std::queue<int64_t> q;
+    visited[start] = 1; q.push(start);
+    DisjointSet dsu(K);
+    int components = K;
+    std::vector<PermWord> generators;
+
+    auto add_if_connecting = [&](int64_t state) {
+        int a, b, c; decode(state, a, b, c);
+        bool joined = false;
+        if (dsu.unite(a, b)) { --components; joined = true; }
+        if (dsu.unite(b, c)) { --components; joined = true; }
+        if (!joined && !generators.empty()) return;
+        MoveStep setup;
+        for (int64_t s = state; s != start; s = parent[s])
+            setup.push_back(p.moves[parent_move[s]]);
+        std::reverse(setup.begin(), setup.end());
+        MoveStep word = inverse_step(setup);
+        word.insert(word.end(), alg.begin(), alg.end());
+        word.insert(word.end(), setup.begin(), setup.end());
+        generators.push_back(PermWord{make_3cycle_perm(K, a, b, c), std::move(word)});
+    };
+    add_if_connecting(start);
+    while (!q.empty() && components > 1) {
+        const int64_t cur = q.front(); q.pop();
+        int a, b, c; decode(cur, a, b, c);
+        for (int m = 0; m < static_cast<int>(p.moves.size()); ++m) {
+            const int na = p.perm[a][m], nb = p.perm[b][m], nc = p.perm[c][m];
+            if (na < 0 || nb < 0 || nc < 0) continue;
+            const int64_t ns = encode(na, nb, nc);
+            if (visited[ns]) continue;
+            visited[ns] = 1;
+            parent[ns] = cur;
+            parent_move[ns] = static_cast<int16_t>(m);
+            q.push(ns);
+            add_if_connecting(ns);
+        }
+    }
+    if (components != 1) {
+        if (std::getenv("CUBE_DEBUG_EXACT_WINGS"))
+            std::fprintf(stderr, "[exact-wings] conjugate components=%d K=%d\n", components, K);
+        return {};
+    }
+    return generators;
 }
+
+bool solve_wing_orbit_exact(NxNCube& cube, std::vector<MoveStep>& out_seq,
+                            const PieceOrbit& p, const MoveStep& alg) {
+    const int K = static_cast<int>(p.face_a_stickers.size());
+    const WingActionTriple slots = detect_wing_action(p, alg);
+    if (slots.source_idx < 0) {
+        if (std::getenv("CUBE_DEBUG_EXACT_WINGS")) std::fprintf(stderr, "[exact-wings] no action triple\n");
+        return false;
+    }
+
+    std::map<std::pair<uint8_t,uint8_t>, std::vector<int>> current, homes;
+    for (int i = 0; i < K; ++i) {
+        current[read_pair(cube, p, i)].push_back(i);
+        homes[home_pair(p, i)].push_back(i);
+    }
+    if (current.size() != homes.size()) {
+        if (std::getenv("CUBE_DEBUG_EXACT_WINGS")) {
+            std::fprintf(stderr, "[exact-wings] pair key count mismatch current=%zu homes=%zu\n", current.size(), homes.size());
+            for (const auto& [pair, pos] : current)
+                std::fprintf(stderr, "  current (%d,%d) x%zu\n", pair.first, pair.second, pos.size());
+        }
+        return false;
+    }
+    std::vector<int> target = identity_perm(K);
+    for (const auto& [pair, positions] : current) {
+        auto it = homes.find(pair);
+        if (it == homes.end() || it->second.size() != positions.size()) {
+            if (std::getenv("CUBE_DEBUG_EXACT_WINGS"))
+                std::fprintf(stderr, "[exact-wings] pair multiplicity mismatch (%d,%d) current=%zu home=%zu\n",
+                             pair.first, pair.second, positions.size(),
+                             it == homes.end() ? 0UL : it->second.size());
+            return false;
+        }
+        for (int j = 0; j < static_cast<int>(positions.size()); ++j)
+            target[positions[j]] = it->second[j];
+    }
+    if (!permutation_is_even(target)) {
+        bool fixed = false;
+        for (const auto& [pair, positions] : current) {
+            (void)pair;
+            if (positions.size() < 2) continue;
+            std::swap(target[positions[0]], target[positions[1]]);
+            fixed = true;
+            break;
+        }
+        if (!fixed || !permutation_is_even(target)) return false;
+    }
+
+    const auto generators = build_connected_wing_generators(p, alg, slots);
+    if (generators.empty()) return false;
+    std::vector<std::array<int,3>> cycles;
+    if (!decompose_even_perm(target, cycles)) return false;
+    MoveStep solution;
+    if (!realize_3cycles(generators, cycles, solution)) return false;
+
+    NxNCube trial = cube;
+    apply_move_step(trial, solution);
+    for (int i = 0; i < K; ++i) if (!piece_solved(trial, p, i)) return false;
+    if (std::getenv("CUBE_DEBUG_EXACT_WINGS")) {
+        int exact = 0;
+        for (int i = 0; i < K; ++i) if (piece_solved_exact(trial, p, i)) ++exact;
+        int paired = 0;
+        for (int e = 0; e < 12; ++e) {
+            const auto& a0 = p.face_a_stickers[2*e];
+            const auto& b0 = p.face_b_stickers[2*e];
+            const auto& a1 = p.face_a_stickers[2*e+1];
+            const auto& b1 = p.face_b_stickers[2*e+1];
+            if (trial.sticker((int)a0.face,a0.row,a0.col) == trial.sticker((int)a1.face,a1.row,a1.col) &&
+                trial.sticker((int)b0.face,b0.row,b0.col) == trial.sticker((int)b1.face,b1.row,b1.col)) ++paired;
+        }
+        std::fprintf(stderr, "[exact-wings] K=%d unordered=%d exact=%d paired=%d/12\n", K, K, exact, paired);
+    }
+    cube = std::move(trial);
+    if (!solution.empty()) out_seq.push_back(std::move(solution));
+    return true;
+}
+
+bool apply_wing_permutation_exact(NxNCube& cube, std::vector<MoveStep>& out_seq,
+                                  const PieceOrbit& p, const MoveStep& alg,
+                                  const std::vector<int>& target) {
+    const int K = static_cast<int>(p.face_a_stickers.size());
+    if (static_cast<int>(target.size()) != K || !permutation_is_even(target)) return false;
+    const WingActionTriple slots = detect_wing_action(p, alg);
+    if (slots.source_idx < 0) return false;
+    const auto generators = build_connected_wing_generators(p, alg, slots);
+    if (generators.empty()) return false;
+    std::vector<std::array<int,3>> cycles;
+    if (!decompose_even_perm(target, cycles)) return false;
+    MoveStep solution;
+    if (!realize_3cycles(generators, cycles, solution)) return false;
+    NxNCube trial = cube;
+    apply_move_step(trial, solution);
+    cube = std::move(trial);
+    if (!solution.empty()) out_seq.push_back(std::move(solution));
+    return true;
+}
+
+}  // namespace cube_nxn

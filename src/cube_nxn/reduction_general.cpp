@@ -1355,4 +1355,87 @@ bool find_complete_pair_setup(const PieceOrbit& p, int from_a, int from_b,
     return false;
 }
 
+bool solve_middle_edges_exact(NxNCube& cube, std::vector<MoveStep>& out,
+                              const PieceOrbit& p, const MoveStep& cycle_alg,
+                              const MoveStep& flip_alg) {
+    const int K = static_cast<int>(p.face_a_stickers.size());
+    const NxNCube before = cube;
+    std::vector<MoveStep> generated;
+    const WingActionTriple slots = detect_wing_action(p, cycle_alg);
+    if (slots.source_idx < 0) return false;
+
+    std::map<std::pair<uint8_t,uint8_t>, int> home_for_pair;
+    for (int i = 0; i < K; ++i) home_for_pair[home_pair(p, i)] = i;
+    if (static_cast<int>(home_for_pair.size()) != K) return false;
+    std::vector<int> target(K, -1);
+    for (int i = 0; i < K; ++i) {
+        auto it = home_for_pair.find(read_pair(cube, p, i));
+        if (it == home_for_pair.end()) return false;
+        target[i] = it->second;
+    }
+    if (!permutation_is_even(target)) return false;
+
+    const auto generators = build_connected_wing_generators(p, cycle_alg, slots);
+    if (generators.empty()) return false;
+    std::vector<std::array<int,3>> cycles;
+    if (!decompose_even_perm(target, cycles)) return false;
+    MoveStep position_solution;
+    if (!realize_3cycles(generators, cycles, position_solution)) return false;
+    NxNCube trial = cube;
+    apply_move_step(trial, position_solution);
+    for (int i = 0; i < K; ++i) if (!piece_solved(trial, p, i)) return false;
+    if (!position_solution.empty()) generated.push_back(std::move(position_solution));
+
+    std::vector<int> flipped;
+    for (int i = 0; i < K; ++i) if (!piece_solved_exact(trial, p, i)) flipped.push_back(i);
+    if (flipped.size() % 2 != 0) return false;
+    while (!flipped.empty()) {
+        const int a = flipped[0], b = flipped[1];
+        MoveStep setup;
+        if (!find_complete_pair_setup(p, a, b, 0, 2, setup)) {
+            if (!find_complete_pair_setup(p, a, b, 2, 0, setup)) return false;
+        }
+        MoveStep operation = setup;
+        operation.insert(operation.end(), flip_alg.begin(), flip_alg.end());
+        MoveStep undo = inverse_step(setup);
+        operation.insert(operation.end(), undo.begin(), undo.end());
+        apply_move_step(trial, operation);
+        generated.push_back(std::move(operation));
+
+        flipped.clear();
+        for (int i = 0; i < K; ++i) {
+            if (!piece_solved(trial, p, i)) return false;
+            if (!piece_solved_exact(trial, p, i)) flipped.push_back(i);
+        }
+    }
+
+    // pure middle-edge stage must leave every other sticker byte-for-byte unchanged
+    std::vector<uint8_t> is_middle(before.num_stickers(), 0);
+    for (int i = 0; i < K; ++i) {
+        const auto& a = p.face_a_stickers[i];
+        const auto& b = p.face_b_stickers[i];
+        const int fs = p.n * p.n;
+        is_middle[(int)a.face * fs + a.row * p.n + a.col] = 1;
+        is_middle[(int)b.face * fs + b.row * p.n + b.col] = 1;
+    }
+    for (int i = 0; i < before.num_stickers(); ++i)
+        if (!is_middle[i] && trial.raw()[i] != before.raw()[i]) return false;
+    cube = std::move(trial);
+    out.insert(out.end(), std::make_move_iterator(generated.begin()),
+               std::make_move_iterator(generated.end()));
+    return true;
+}
+
+void solve_middles_general(NxNCube& cube, std::vector<MoveStep>& out, int n,
+                          const std::vector<EdgeSlotGeom>& edges) {
+    if (n % 2 == 0) return;
+    PieceOrbit p = build_middle_piece_orbit(n, edges, setup_moves_for_n(n));
+    bool ok = solve_middle_edges_exact(cube, out, p,
+                                       middle_edge_3cycle(n), middle_edge_flip(n));
+    if (std::getenv("CUBE_DEBUG_EXACT_MIDDLES")) {
+        std::fprintf(stderr, "[exact-middles] ok=%d final_solved=%d\n",
+                     ok ? 1 : 0, cube.is_solved() ? 1 : 0);
+    }
+}
+
 }  // namespace cube_nxn

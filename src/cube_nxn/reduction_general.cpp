@@ -1284,4 +1284,75 @@ bool apply_wing_permutation_exact(NxNCube& cube, std::vector<MoveStep>& out_seq,
     return true;
 }
 
+bool find_complete_pair_setup(const PieceOrbit& p, int from_a, int from_b,
+                              int to_a, int to_b, MoveStep& setup_out);
+
+std::pair<uint8_t,uint8_t> read_ordered_pair(const NxNCube& cube,
+                                             const PieceOrbit& p, int slot) {
+    const auto& a = p.face_a_stickers[slot];
+    const auto& b = p.face_b_stickers[slot];
+    return {cube.sticker((int)a.face, a.row, a.col),
+            cube.sticker((int)b.face, b.row, b.col)};
+}
+
+bool apply_wing_pair_flip_exact(NxNCube& cube, std::vector<MoveStep>& out,
+                                const PieceOrbit& p, const MoveStep& flip_alg,
+                                int edge_id) {
+    const int a = 2 * edge_id, b = a + 1;
+    const auto before_a = read_ordered_pair(cube, p, a);
+    const auto before_b = read_ordered_pair(cube, p, b);
+    if (before_a != before_b) return false;
+    MoveStep setup;
+    if (!find_complete_pair_setup(p, a, b, 0, 1, setup)) {
+        if (!find_complete_pair_setup(p, a, b, 1, 0, setup)) return false;
+    }
+    MoveStep operation = setup;
+    operation.insert(operation.end(), flip_alg.begin(), flip_alg.end());
+    MoveStep undo = inverse_step(setup);
+    operation.insert(operation.end(), undo.begin(), undo.end());
+    NxNCube trial = cube;
+    apply_move_step(trial, operation);
+    const auto after_a = read_ordered_pair(trial, p, a);
+    const auto after_b = read_ordered_pair(trial, p, b);
+    if (after_a != after_b || after_a.first != before_a.second ||
+        after_a.second != before_a.first) return false;
+    cube = std::move(trial);
+    out.push_back(std::move(operation));
+    return true;
+}
+
+bool find_complete_pair_setup(const PieceOrbit& p, int from_a, int from_b,
+                              int to_a, int to_b, MoveStep& setup_out) {
+    const int K = static_cast<int>(p.face_a_stickers.size());
+    const int start = from_a * K + from_b;
+    const int goal = to_a * K + to_b;
+    if (start == goal) { setup_out.clear(); return true; }
+    std::vector<int> parent(K * K, -1), parent_move(K * K, -1);
+    std::vector<uint8_t> visited(K * K, 0);
+    std::queue<int> q;
+    visited[start] = 1; q.push(start);
+    while (!q.empty()) {
+        const int cur = q.front(); q.pop();
+        const int a = cur / K, b = cur % K;
+        for (int m = 0; m < static_cast<int>(p.moves.size()); ++m) {
+            const int na = p.perm[a][m], nb = p.perm[b][m];
+            if (na < 0 || nb < 0) continue;
+            const int ns = na * K + nb;
+            if (visited[ns]) continue;
+            visited[ns] = 1;
+            parent[ns] = cur;
+            parent_move[ns] = m;
+            if (ns == goal) {
+                setup_out.clear();
+                for (int s = goal; s != start; s = parent[s])
+                    setup_out.push_back(p.moves[parent_move[s]]);
+                std::reverse(setup_out.begin(), setup_out.end());
+                return true;
+            }
+            q.push(ns);
+        }
+    }
+    return false;
+}
+
 }  // namespace cube_nxn

@@ -1,6 +1,5 @@
 // architecture:
-//   - `cubies` is source of truth (from cubeState.ts) — 27 cubies at
-//     integer grid positions with quaternion orientations
+//   - `cubies` is source of truth (from cubeState.ts)
 //   - during a face turn, mount a temporary <group> around just the affected
 //     layer, drive its rotation from 0 -> ±pi/2 over MOVE_DURATION_MS, then
 //     "commit" the rotation by calling rotateFace() on our cubies state
@@ -12,17 +11,20 @@ import { OrbitControls } from "@react-three/drei";
 import { useEffect, useMemo, useRef } from "react";
 import { Group, Mesh, MeshStandardMaterial } from "three";
 
-import type { Cubie, Face } from "./cubeState";
+import type { Cubie, ParsedMove } from "./cubeState";
 import {
     FACE_AXIS,
+    applyMoves,
+    cubieIsInMove,
     homeStickerColors,
     parseMove,
-    rotateFace,
+    rotateMove,
 } from "./cubeState";
 
-const MOVE_DURATION_MS = 220;
+const MAX_ANIMATED_MOVES = 80;
 
 interface Props {
+    n: number;
     cubies: Cubie[];
     setCubies: (next: Cubie[]) => void;
     // queue of moves to play back sequentially; consume from the front
@@ -30,11 +32,11 @@ interface Props {
     setMoveQueue: (next: string[]) => void;
 }
 
-export function Cube({ cubies, setCubies, moveQueue, setMoveQueue }: Props) {
+export function Cube({ n, cubies, setCubies, moveQueue, setMoveQueue }: Props) {
     const anim = useRef<{
-        face: Face;
-        quarterTurns: number;
+        move: ParsedMove;
         startedAt: number;
+        durationMs: number;
         layerHomes: Set<number>;
     } | null>(null);
     const layerGroup = useRef<Group>(null);
@@ -43,30 +45,37 @@ export function Cube({ cubies, setCubies, moveQueue, setMoveQueue }: Props) {
     useEffect(() => {
         if (anim.current !== null) return;
         if (moveQueue.length === 0) return;
+        if (moveQueue.length > MAX_ANIMATED_MOVES) {
+            const fastForwardCount = moveQueue.length - MAX_ANIMATED_MOVES;
+            setCubies(applyMoves(
+                cubies,
+                moveQueue.slice(0, fastForwardCount),
+                n,
+            ));
+            setMoveQueue(moveQueue.slice(fastForwardCount));
+            return;
+        }
         const token = moveQueue[0];
-        const { face, quarterTurns } = parseMove(token);
-        const [axis, sign] = FACE_AXIS[face];
+        const move = parseMove(token);
         const layerHomes = new Set(
             cubies
-                .filter(c => Math.round(
-                    axis === "x" ? c.position.x : axis === "y" ? c.position.y : c.position.z
-                ) === sign)
-                .map(c => c.home)
+                .filter(cubie => cubieIsInMove(cubie, move, n))
+                .map(cubie => cubie.home)
         );
         anim.current = {
-            face,
-            quarterTurns,
+            move,
             startedAt: performance.now(),
+            durationMs: Math.max(20, Math.min(140, 1600 / moveQueue.length)),
             layerHomes,
         };
-    }, [moveQueue, cubies]);
+    }, [moveQueue, cubies, n]);
 
     useFrame(() => {
         if (!anim.current || !layerGroup.current) return;
-        const { face, quarterTurns, startedAt } = anim.current;
-        const [axis, sign] = FACE_AXIS[face];
-        const totalAngle = quarterTurns * -sign * Math.PI / 2;
-        const t = Math.min(1, (performance.now() - startedAt) / MOVE_DURATION_MS);
+        const { move, startedAt, durationMs } = anim.current;
+        const [axis, sign] = FACE_AXIS[move.face];
+        const totalAngle = move.quarterTurns * -sign * Math.PI / 2;
+        const t = Math.min(1, (performance.now() - startedAt) / durationMs);
 
         // ease-in-out cubic so animation doesn't look mechanical
         const eased = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
@@ -80,7 +89,7 @@ export function Cube({ cubies, setCubies, moveQueue, setMoveQueue }: Props) {
         if (t >= 1) {
             // commit: replace cubies with the post-rotation state and drop the
             // temp group's rotation back to zero for next move
-            const next = rotateFace(cubies, face, quarterTurns);
+            const next = rotateMove(cubies, move, n);
             anim.current = null;
             layerGroup.current.rotation.set(0, 0, 0);
             setCubies(next);
@@ -103,19 +112,19 @@ export function Cube({ cubies, setCubies, moveQueue, setMoveQueue }: Props) {
             <OrbitControls enablePan={false} />
             <ambientLight intensity={0.7} />
             <directionalLight position={[5, 8, 5]} intensity={0.6} />
-            <group>
-                {staticCubies.map(c => <CubieMesh key={c.home} cubie={c} />)}
+            <group scale={3 / n}>
+                {staticCubies.map(c => <CubieMesh key={c.home} cubie={c} n={n} />)}
                 <group ref={layerGroup}>
-                    {layerCubies.map(c => <CubieMesh key={c.home} cubie={c} />)}
+                    {layerCubies.map(c => <CubieMesh key={c.home} cubie={c} n={n} />)}
                 </group>
             </group>
         </>
     );
 }
 
-function CubieMesh({ cubie }: { cubie: Cubie }) {
+function CubieMesh({ cubie, n }: { cubie: Cubie; n: number }) {
     const meshRef = useRef<Mesh>(null);
-    const colors = useMemo(() => homeStickerColors(cubie.home), [cubie.home]);
+    const colors = useMemo(() => homeStickerColors(cubie, n), [cubie, n]);
     const materials = useMemo(
         () => colors.map(c => new MeshStandardMaterial({ color: c })),
         [colors],
@@ -134,4 +143,3 @@ function CubieMesh({ cubie }: { cubie: Cubie }) {
         </mesh>
     );
 }
-

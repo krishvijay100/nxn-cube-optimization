@@ -50,7 +50,34 @@ header .sub {
     gap: 12px;
     flex-wrap: wrap;
 }
-.controls button {
+.size-select {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #aaa;
+    font-size: 13px;
+}
+.size-select select {
+    appearance: none;
+    background: #2a2a2a;
+    color: #eee;
+    border: 1px solid #444;
+    border-radius: 6px;
+    padding: 8px 30px 8px 12px;
+    font-size: 14px;
+    cursor: pointer;
+    background-image:
+        linear-gradient(45deg, transparent 50%, #aaa 50%),
+        linear-gradient(135deg, #aaa 50%, transparent 50%);
+    background-position:
+        calc(100% - 14px) 13px,
+        calc(100% - 9px) 13px;
+    background-size: 5px 5px, 5px 5px;
+    background-repeat: no-repeat;
+}
+.size-select select:disabled { opacity: 0.4; cursor: not-allowed; }
+.controls button,
+.scramble-input button {
     background: #2a2a2a;
     color: #eee;
     border: 1px solid #444;
@@ -60,11 +87,35 @@ header .sub {
     cursor: pointer;
     transition: background 0.15s;
 }
-.controls button:hover:not(:disabled) { background: #3a3a3a; }
-.controls button:disabled { opacity: 0.4; cursor: not-allowed; }
+.controls button:hover:not(:disabled),
+.scramble-input button:hover:not(:disabled) { background: #3a3a3a; }
+.controls button:disabled,
+.scramble-input button:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .status { font-size: 13px; color: #aaa; }
 .error  { font-size: 13px; color: #f66; }
+
+.scramble-input {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+.scramble-input input {
+    flex: 1;
+    min-width: 280px;
+    background: #1a1a1a;
+    color: #eee;
+    border: 1px solid #444;
+    border-radius: 6px;
+    padding: 9px 12px;
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", monospace;
+    font-size: 13px;
+    outline: none;
+}
+.scramble-input input:focus { border-color: #777; }
+.scramble-input input:disabled { opacity: 0.5; }
+.input-help { color: #777; font-size: 12px; }
 
 .moves {
     font-family: ui-monospace, SFMono-Regular, "SF Mono", monospace;
@@ -76,5 +127,9 @@ header .sub {
     display: flex;
     flex-direction: column;
     gap: 4px;
+    max-height: 140px;
+    overflow: auto;
+    flex-shrink: 0;
 }
+.moves div { overflow-wrap: anywhere; line-height: 1.45; }
 .moves strong { color: #eee; font-weight: 600; }

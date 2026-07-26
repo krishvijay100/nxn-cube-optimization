@@ -5,17 +5,17 @@
 // default to same-origin ("") so the built bundle served by fastapi from the docker image works without any config
 const BASE = import.meta.env.VITE_API_URL ?? "";
 
-export async function fetchScramble(length = 20): Promise<string[]> {
-    const r = await fetch(`${BASE}/scramble?length=${length}`);
+export async function fetchScramble(n: number, length = 20): Promise<string[]> {
+    const r = await fetch(`${BASE}/scramble?n=${n}&length=${length}`);
     if (!r.ok) throw new Error(`scramble ${r.status}: ${await r.text()}`);
     return (await r.json()).scramble as string[];
 }
 
-export async function fetchSolve(scramble: string[]): Promise<string[]> {
+export async function fetchSolve(n: number, scramble: string[]): Promise<string[]> {
     const r = await fetch(`${BASE}/solve`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scramble }),
+        body: JSON.stringify({ n, scramble }),
     });
     if (!r.ok) throw new Error(`solve ${r.status}: ${await r.text()}`);
     return (await r.json()).solution as string[];

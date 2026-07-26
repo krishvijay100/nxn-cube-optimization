@@ -5,8 +5,10 @@
 #include <cassert>
 #include <cctype>
 #include <cstdlib>
+#include <map>
 #include <queue>
 #include <string>
+#include <tuple>
 #include <unordered_set>
 #include <vector>
 
@@ -657,6 +659,101 @@ inline bool same_layer(const Move& a, const Move& b) {
 
 }
 
+namespace {
+
+uint64_t move_code(const Move& m) {
+    return (static_cast<uint64_t>(m.face) << 24) |
+           (static_cast<uint64_t>(m.outer_depth) << 16) |
+           (static_cast<uint64_t>(m.inner_depth) << 8) |
+           static_cast<uint64_t>(m.turn);
+}
+
+bool same_position(const NxNCube& a, const NxNCube& b) {
+    if (a.n() != b.n()) return false;
+    for (int i = 0; i < a.num_stickers(); ++i) {
+        if (a.raw()[i] != b.raw()[i]) return false;
+    }
+    return true;
+}
+
+bool moves_commute(const Move& a, const Move& b, int n) {
+    NxNCube ab_lo(n), ab_hi(n), ba_lo(n), ba_hi(n);
+    for (int i = 0; i < ab_lo.num_stickers(); ++i) {
+        const auto id = static_cast<uint16_t>(i);
+        ab_lo.raw()[i] = ba_lo.raw()[i] = static_cast<uint8_t>(id);
+        ab_hi.raw()[i] = ba_hi.raw()[i] = static_cast<uint8_t>(id >> 8);
+    }
+    for (NxNCube* cube : {&ab_lo, &ab_hi}) {
+        apply_move(*cube, a);
+        apply_move(*cube, b);
+    }
+    for (NxNCube* cube : {&ba_lo, &ba_hi}) {
+        apply_move(*cube, b);
+        apply_move(*cube, a);
+    }
+    return same_position(ab_lo, ba_lo) && same_position(ab_hi, ba_hi);
+}
+
+bool inverse_pair(const Move& a, const Move& b) {
+    return same_layer(a, b) &&
+           (a.turn == Turn::Half
+                ? b.turn == Turn::Half
+                : (a.turn == Turn::CW ? b.turn == Turn::CCW
+                                       : b.turn == Turn::CW));
+}
+
+auto move_sort_key(const Move& m) {
+    return std::tuple<int, int, int, int>{
+        static_cast<int>(m.face), m.outer_depth, m.inner_depth,
+        static_cast<int>(m.turn)};
+}
+
+std::vector<Move> optimize_reduction_moves(const std::vector<Move>& input, int n) {
+    std::vector<Move> out = collapse_redundant_moves(input);
+    if (n < 4 || out.size() < 3) return out;
+
+    std::map<std::pair<uint64_t, uint64_t>, bool> commute_cache;
+    auto commute = [&](const Move& a, const Move& b) {
+        uint64_t x = move_code(a), y = move_code(b);
+        if (x > y) std::swap(x, y);
+        const auto key = std::make_pair(x, y);
+        const auto it = commute_cache.find(key);
+        if (it != commute_cache.end()) return it->second;
+        const bool result = moves_commute(a, b, n);
+        commute_cache.emplace(key, result);
+        return result;
+    };
+
+    bool changed = true;
+    while (changed) {
+        changed = false;
+
+        // canonically reorder commuting moves so later same-layer turns meet
+        for (size_t i = 1; i < out.size(); ++i) {
+            if (commute(out[i - 1], out[i]) &&
+                move_sort_key(out[i]) < move_sort_key(out[i - 1])) {
+                std::swap(out[i - 1], out[i]);
+                changed = true;
+            }
+        }
+        out = collapse_redundant_moves(out);
+
+        // A B A^-1 == B when A and B commute; remove the redundant conjugate if possible
+        for (size_t i = 0; i + 2 < out.size(); ++i) {
+            if (inverse_pair(out[i], out[i + 2]) && commute(out[i], out[i + 1])) {
+                out.erase(out.begin() + static_cast<std::ptrdiff_t>(i + 2));
+                out.erase(out.begin() + static_cast<std::ptrdiff_t>(i));
+                changed = true;
+                break;
+            }
+        }
+        out = collapse_redundant_moves(out);
+    }
+    return out;
+}
+
+}
+
 std::vector<Move> collapse_redundant_moves(const std::vector<Move>& moves) {
     std::vector<Move> out;
     out.reserve(moves.size());
@@ -947,15 +1044,17 @@ SolveResult solve_nxn(NxNCube& cube) {
     SolveResult result{};
     std::vector<Move> raw;
     auto finalize = [&]() -> SolveResult {
-        result.moves = collapse_redundant_moves(raw);
+        const auto baseline = collapse_redundant_moves(raw);
+        result.moves = optimize_reduction_moves(raw, n);
         NxNCube replay = original;
         for (const auto& move : result.moves) apply_move(replay, move);
         if (!replay.is_solved()) {
-            result.moves.clear();
-            result.ok = false;
-            return result;
+            result.moves = baseline;
+            replay = original;
+            for (const auto& move : result.moves) apply_move(replay, move);
         }
-        result.ok = true;
+        result.ok = replay.is_solved();
+        if (!result.ok) result.moves.clear();
         return result;
     };
 

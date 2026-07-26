@@ -69,6 +69,15 @@ target_compile_options(solver PRIVATE -Wall -Wextra -Wpedantic)
 
 target_link_libraries(cube_nxn PUBLIC cube solver)
 
+# legacy specialized 4x4 reduction path, production targets do not link it;
+# it remains separately buildable for regression tests and benchmarking
+add_library(cube_n4_legacy EXCLUDE_FROM_ALL
+    src/cube_nxn/legacy/reduction_n4_legacy.cpp
+)
+target_include_directories(cube_n4_legacy PUBLIC src)
+target_link_libraries(cube_n4_legacy PUBLIC cube_nxn)
+target_compile_options(cube_n4_legacy PRIVATE -Wall -Wextra -Wpedantic)
+
 add_executable(nxn_cube app/main.cpp)
 target_link_libraries(nxn_cube PRIVATE cube)
 
@@ -80,7 +89,7 @@ target_compile_options(profile_solve PRIVATE -g)
 
 # phase-8 stage-1 demo: print a scramble + center-reduction sequence
 add_executable(reduce_centers_demo tools/reduce_centers_demo.cpp)
-target_link_libraries(reduce_centers_demo PRIVATE cube cube_nxn)
+target_link_libraries(reduce_centers_demo PRIVATE cube_n4_legacy)
 
 enable_testing()
 add_subdirectory(tests)

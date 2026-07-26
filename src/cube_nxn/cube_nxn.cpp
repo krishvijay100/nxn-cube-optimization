@@ -550,100 +550,6 @@ BFSResult reduce_bfs(
 
 namespace {
 
-constexpr int N4_CENTER_SLOTS[4][2] = {{1,1}, {1,2}, {2,1}, {2,2}};
-
-bool face_centers_monochrome(const NxNCube& cube, Face face) {
-    const uint8_t color = static_cast<uint8_t>(face);
-    for (const auto& slot : N4_CENTER_SLOTS) {
-        if (cube.sticker(static_cast<int>(face), slot[0], slot[1]) != color) return false;
-    }
-    return true;
-}
-
-// 64-bit fnv-1a of the full sticker array
-uint64_t fnv1a_full(const NxNCube& c) {
-    uint64_t h = 0xcbf29ce484222325ULL;
-    const uint8_t* p = c.raw();
-    const int n = c.num_stickers();
-    for (int i = 0; i < n; ++i) {
-        h ^= p[i];
-        h *= 0x100000001b3ULL;
-    }
-    return h;
-}
-
-// BFS wrapper that retries at progressively deeper bounds
-std::vector<MoveStep> bfs_with_deepening(
-    const NxNCube& start,
-    const std::function<bool(const NxNCube&)>& is_goal,
-    const std::vector<MoveStep>& moves)
-{
-    const int depths[] = {5, 8, 12};
-    for (int d : depths) {
-        BFSResult r = reduce_bfs(start, is_goal, fnv1a_full, moves, d);
-        if (r.found) return r.sequence;
-    }
-    return {};
-}
-
-}
-
-std::vector<MoveStep> solve_centers_n4(NxNCube& cube) {
-    assert(cube.n() == 4 && "solve_centers_n4 currently supports N=4 only");
-    const auto moves = legal_move_steps_for_stage(4, Stage::Centers);
-
-    std::vector<MoveStep> total_sequence;
-    const Face face_order[6] = {Face::U, Face::D, Face::F, Face::B, Face::L, Face::R};
-    std::vector<Face> completed;   // faces already fully solved
-
-    for (Face face : face_order) {
-        const uint8_t face_color = static_cast<uint8_t>(face);
-        const int face_idx = static_cast<int>(face);
-
-        // slots already filled on the current face during this pass
-        std::vector<std::pair<int, int>> placed_this_face;
-
-        for (const auto& slot : N4_CENTER_SLOTS) {
-            // skip if slot already correct
-            if (cube.sticker(face_idx, slot[0], slot[1]) == face_color) {
-                placed_this_face.push_back({slot[0], slot[1]});
-                continue;
-            }
-
-            const int target_row = slot[0];
-            const int target_col = slot[1];
-            std::vector<std::pair<int, int>> preserve = placed_this_face;
-            std::vector<Face> preserve_faces = completed;
-
-            auto is_goal = [face_color, face_idx, target_row, target_col,
-                            preserve, preserve_faces](const NxNCube& c) {
-                if (c.sticker(face_idx, target_row, target_col) != face_color) return false;
-                for (const auto& s : preserve) {
-                    if (c.sticker(face_idx, s.first, s.second) != face_color) return false;
-                }
-                for (Face f : preserve_faces) {
-                    if (!face_centers_monochrome(c, f)) return false;
-                }
-                return true;
-            };
-
-            auto seq = bfs_with_deepening(cube, is_goal, moves);
-            if (seq.empty()) {
-                // depth 12 was insufficient
-                return {};
-            }
-            for (const auto& s : seq) apply_move_step(cube, s);
-            total_sequence.insert(total_sequence.end(), seq.begin(), seq.end());
-            placed_this_face.push_back({target_row, target_col});
-        }
-
-        completed.push_back(face);
-    }
-    return total_sequence;
-}
-
-namespace {
-
 inline int turn_quarters(Turn t) {
     switch (t) {
         case Turn::CW:   return 1;
@@ -697,24 +603,6 @@ struct Sticker { Face face; int row; int col; };
 struct WingPair { Sticker a; Sticker b; };
 struct EdgeSlot { WingPair w1; WingPair w2; Face face_a; Face face_b; };
 
-constexpr EdgeSlot N4_EDGES[12] = {
-    // top layer (U with F/R/B/L)
-    { {{Face::U, 3, 1}, {Face::F, 0, 1}}, {{Face::U, 3, 2}, {Face::F, 0, 2}}, Face::U, Face::F },
-    { {{Face::U, 1, 3}, {Face::R, 0, 1}}, {{Face::U, 2, 3}, {Face::R, 0, 2}}, Face::U, Face::R },
-    { {{Face::U, 0, 2}, {Face::B, 0, 1}}, {{Face::U, 0, 1}, {Face::B, 0, 2}}, Face::U, Face::B },
-    { {{Face::U, 2, 0}, {Face::L, 0, 1}}, {{Face::U, 1, 0}, {Face::L, 0, 2}}, Face::U, Face::L },
-    // bottom layer (D with F/R/B/L)
-    { {{Face::D, 0, 1}, {Face::F, 3, 1}}, {{Face::D, 0, 2}, {Face::F, 3, 2}}, Face::D, Face::F },
-    { {{Face::D, 1, 3}, {Face::R, 3, 2}}, {{Face::D, 2, 3}, {Face::R, 3, 1}}, Face::D, Face::R },
-    { {{Face::D, 3, 2}, {Face::B, 3, 1}}, {{Face::D, 3, 1}, {Face::B, 3, 2}}, Face::D, Face::B },
-    { {{Face::D, 2, 0}, {Face::L, 3, 2}}, {{Face::D, 1, 0}, {Face::L, 3, 1}}, Face::D, Face::L },
-    // middle layer (F/R, R/B, B/L, L/F verticals)
-    { {{Face::F, 1, 3}, {Face::R, 1, 0}}, {{Face::F, 2, 3}, {Face::R, 2, 0}}, Face::F, Face::R },
-    { {{Face::R, 1, 3}, {Face::B, 1, 0}}, {{Face::R, 2, 3}, {Face::B, 2, 0}}, Face::R, Face::B },
-    { {{Face::B, 1, 3}, {Face::L, 1, 0}}, {{Face::B, 2, 3}, {Face::L, 2, 0}}, Face::B, Face::L },
-    { {{Face::L, 1, 3}, {Face::F, 1, 0}}, {{Face::L, 2, 3}, {Face::F, 2, 0}}, Face::L, Face::F },
-};
-
 std::array<EdgeSlot, 12> make_edge_slots(int n) {
     const int t1 = 1;
     const int t2 = n - 2;
@@ -733,119 +621,6 @@ std::array<EdgeSlot, 12> make_edge_slots(int n) {
         { {{Face::L, t1, n-1}, {Face::F, t1, 0}}, {{Face::L, t2, n-1}, {Face::F, t2, 0}}, Face::L, Face::F },
     }};
 }
-
-bool edge_slot_paired(const NxNCube& cube, const EdgeSlot& e) {
-    const uint8_t a1 = cube.sticker(static_cast<int>(e.w1.a.face), e.w1.a.row, e.w1.a.col);
-    const uint8_t b1 = cube.sticker(static_cast<int>(e.w1.b.face), e.w1.b.row, e.w1.b.col);
-    const uint8_t a2 = cube.sticker(static_cast<int>(e.w2.a.face), e.w2.a.row, e.w2.a.col);
-    const uint8_t b2 = cube.sticker(static_cast<int>(e.w2.b.face), e.w2.b.row, e.w2.b.col);
-    return a1 == a2 && b1 == b2;
-}
-
-uint64_t fnv1a_full_edge(const NxNCube& c) {
-    uint64_t h = 0xcbf29ce484222325ULL;
-    const uint8_t* p = c.raw();
-    const int n = c.num_stickers();
-    for (int i = 0; i < n; ++i) {
-        h ^= p[i];
-        h *= 0x100000001b3ULL;
-    }
-    return h;
-}
-
-}
-
-namespace {
-
-MoveStep macro_from_str(std::string_view s) {
-    auto v = parse_scramble(s);
-    assert(v.has_value() && "macro string failed to parse");
-    return *v;
-}
-
-std::vector<MoveStep> build_algo_edge_moves() {
-    std::vector<MoveStep> out;
-    append_outer_turns(out);
-
-    // center-preserving pair macros
-    const char* macros[] = {
-        // U-axis conjugates (Uw/Dw + face turns on R/L/F/B)
-        "Uw R U R' Uw'",
-        "Uw' L' U' L Uw",
-        "Uw F U F' Uw'",
-        "Uw' F' U' F Uw",
-        "Uw B U B' Uw'",
-        "Uw' B' U' B Uw",
-        "Uw L U L' Uw'",
-        "Uw' R' U' R Uw",
-        // D-axis (mirror of U)
-        "Dw R' U' R Dw'",
-        "Dw' L U L' Dw",
-        "Dw F' U' F Dw'",
-        "Dw' F U F' Dw",
-        "Dw B' U' B Dw'",
-        "Dw' B U B' Dw",
-        // R-axis
-        "Rw U R U' Rw'",
-        "Rw' U' R' U Rw",
-        "Rw F R F' Rw'",
-        "Rw' F' R' F Rw",
-        // L-axis (mirror of R)
-        "Lw U' L' U Lw'",
-        "Lw' U L U' Lw",
-        "Lw F' L' F Lw'",
-        "Lw' F L F' Lw",
-    };
-    for (const char* s : macros) {
-        out.push_back(macro_from_str(s));
-    }
-    return out;
-}
-
-}
-
-EdgePairResult solve_edges_n4_algo(NxNCube& cube) {
-    assert(cube.n() == 4 && "solve_edges_n4_algo currently supports N=4 only");
-
-    static const std::vector<MoveStep> moves = build_algo_edge_moves();
-
-    EdgePairResult result{{}, 0};
-    std::vector<int> already_paired_indices;
-
-    for (int i = 0; i < 12; ++i) {
-        if (edge_slot_paired(cube, N4_EDGES[i])) {
-            already_paired_indices.push_back(i);
-            ++result.edges_paired;
-            continue;
-        }
-
-        std::vector<int> preserve = already_paired_indices;
-        int target = i;
-        auto is_goal = [target, preserve](const NxNCube& c) {
-            if (!edge_slot_paired(c, N4_EDGES[target])) return false;
-            for (int idx : preserve) {
-                if (!edge_slot_paired(c, N4_EDGES[idx])) return false;
-            }
-            return true;
-        };
-
-        std::vector<MoveStep> seq;
-        for (int d : {2, 3, 5}) {
-            BFSResult r = reduce_bfs(cube, is_goal, fnv1a_full_edge, moves, d);
-            if (r.found) { seq = std::move(r.sequence); break; }
-        }
-        if (seq.empty()) {
-            return result;
-        }
-        for (const auto& s : seq) apply_move_step(cube, s);
-        result.sequence.insert(result.sequence.end(), seq.begin(), seq.end());
-        already_paired_indices.push_back(i);
-        ++result.edges_paired;
-    }
-    return result;
-}
-
-namespace {
 
 struct Edge3x3 {
     const char* name;
@@ -1000,28 +775,6 @@ bool analyze_3x3_state(const NxNCube& cube, Analysis& out) {
     return true;
 }
 
-// standard 4x4 parity fix algorithms
-MoveStep parse_alg(const char* s) {
-    auto v = parse_scramble(s);
-    assert(v.has_value() && "parity alg failed to parse");
-    return *v;
-}
-
-const MoveStep& oll_parity_alg() {
-    static const MoveStep alg = parse_alg("Rw2 B2 U2 Lw U2 Rw' U2 Rw U2 F2 Rw F2 Lw' B2 Rw2");
-    return alg;
-}
-
-const MoveStep& pll_parity_alg() {
-    static const MoveStep alg = parse_alg("2R2 U2 2R2 Uw2 2R2 Uw2");
-    return alg;
-}
-
-}
-
-ParityState detect_parity_n4(const NxNCube& cube) {
-    assert(cube.n() == 4 && "detect_parity_n4 currently supports N=4 only");
-    return detect_parity_general(cube);
 }
 
 ParityState detect_parity_general(const NxNCube& cube) {
@@ -1035,22 +788,6 @@ ParityState detect_parity_general(const NxNCube& cube) {
     if (oll)        return ParityState::OLL;
     if (pll)        return ParityState::PLL;
     return ParityState::Valid;
-}
-
-std::vector<MoveStep> fix_parity_n4(NxNCube& cube) {
-    std::vector<MoveStep> out;
-    const ParityState p = detect_parity_n4(cube);
-    if (p == ParityState::OLL || p == ParityState::Both) {
-        const MoveStep& alg = oll_parity_alg();
-        apply_move_step(cube, alg);
-        out.push_back(alg);
-    }
-    if (p == ParityState::PLL || p == ParityState::Both) {
-        const MoveStep& alg = pll_parity_alg();
-        apply_move_step(cube, alg);
-        out.push_back(alg);
-    }
-    return out;
 }
 
 namespace {

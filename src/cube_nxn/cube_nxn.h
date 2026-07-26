@@ -109,16 +109,6 @@ BFSResult reduce_bfs(
     int                                             max_depth,
     size_t                                          max_nodes = 5'000'000);
 
-// solve centers on a 4x4 cube one face at a time via BFS
-std::vector<MoveStep> solve_centers_n4(NxNCube& cube);
-
-struct EdgePairResult {
-    std::vector<MoveStep> sequence;
-    int edges_paired;
-};
-
-EdgePairResult solve_edges_n4_algo(NxNCube& cube);
-
 // parity detection + fix
 enum class ParityState : uint8_t {
     Valid,   // no fix needed
@@ -127,10 +117,7 @@ enum class ParityState : uint8_t {
     Both,    // both problems present
 };
 
-ParityState detect_parity_n4(const NxNCube& cube);
 ParityState detect_parity_general(const NxNCube& cube);
-
-std::vector<MoveStep> fix_parity_n4(NxNCube& cube);
 
 // post-process flat move sequence to collapse redundant moves
 std::vector<Move> collapse_redundant_moves(const std::vector<Move>& moves);

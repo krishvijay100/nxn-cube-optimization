@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include "cube_nxn/cube_nxn.h"
+#include "cube_nxn/legacy/reduction_n4_legacy.h"
 
 using cube_nxn::Face;
 using cube_nxn::NxNCube;
@@ -20,12 +21,12 @@ using cube_nxn::MoveStep;
 using cube_nxn::legal_move_steps_for_stage;
 using cube_nxn::apply_move_step;
 using cube_nxn::reduce_bfs;
-using cube_nxn::solve_centers_n4;
+using cube_nxn::legacy_n4::solve_centers_n4;
 using cube_nxn::collapse_redundant_moves;
-using cube_nxn::solve_edges_n4_algo;
-using cube_nxn::EdgePairResult;
-using cube_nxn::detect_parity_n4;
-using cube_nxn::fix_parity_n4;
+using cube_nxn::legacy_n4::solve_edges_n4_algo;
+using cube_nxn::legacy_n4::EdgePairResult;
+using cube_nxn::legacy_n4::detect_parity_n4;
+using cube_nxn::legacy_n4::fix_parity_n4;
 using cube_nxn::ParityState;
 using cube_nxn::to_cube_state_3x3;
 using cube_nxn::to_nxn_move;

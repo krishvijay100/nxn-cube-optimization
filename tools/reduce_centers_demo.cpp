@@ -4,6 +4,7 @@
 #include <string>
 
 #include "cube_nxn/cube_nxn.h"
+#include "cube_nxn/legacy/reduction_n4_legacy.h"
 
 using namespace cube_nxn;
 
@@ -53,7 +54,7 @@ int main(int argc, char** argv) {
     std::cout << "Scramble:  " << join_moves(scramble) << "\n";
     std::cout << "           (" << scramble.size() << " moves)\n\n";
 
-    auto reduction = solve_centers_n4(cube);
+    auto reduction = legacy_n4::solve_centers_n4(cube);
     if (reduction.empty()) {
         std::cout << "!! solve_centers_n4 returned empty — solver failure\n";
         return 1;

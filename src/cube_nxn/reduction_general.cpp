@@ -67,6 +67,7 @@ std::vector<EdgeSlotG> enumerate_edge_slots(int n) {
     return out;
 }
 
+// move construction helpers
 namespace {
 
 inline Move mk_outer(Face f, Turn t) { return Move{f, 0, 0, t}; }
@@ -254,6 +255,8 @@ MoveStep oll_parity_general(int k) {
     };
 }
 
+// enumerate all setup moves for a given N: outer faces + slice moves at each valid depth
+// Slice depths: 2 through N-1 inclusive
 std::vector<Move> setup_moves_for_n(int n) {
     std::vector<Move> moves;
     for (int f = 0; f < 6; ++f) {
@@ -327,6 +330,7 @@ PermWord inverse_pw(const PermWord& a) {
     return out;
 }
 
+// build the OrbitGraph using supplied move set
 OrbitGraph build_orbit_graph(int n, const std::function<bool(int,int,int)>& in_orbit,
                              const std::vector<Move>& move_set) {
     OrbitGraph g;
@@ -880,6 +884,7 @@ bool centers_reduced_general(const NxNCube& cube) {
     return true;
 }
 
+
 // edge geometry for general N
 
 struct EdgeSticker { Face face; int row; int col; };
@@ -932,6 +937,7 @@ std::vector<EdgeSlotGeom> build_edge_geom() {
 inline std::pair<int,int> wing_ts(int w, int n) {
     return {w + 1, n - 2 - w};
 }
+
 
 // piece-tracking wing solver
 
@@ -1536,4 +1542,4 @@ MoveStep oblique_3cycle_alg(int n, int a, int b, int chir) { return find_clean_o
 MoveStep middle_edge_3cycle_alg(int n)        { return middle_edge_3cycle(n); }
 MoveStep middle_edge_flip_alg(int n)          { return middle_edge_flip(n); }
 
-}  // namespace cube_nxn
+}

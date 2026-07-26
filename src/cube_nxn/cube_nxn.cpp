@@ -1,5 +1,7 @@
 #include "cube_nxn/cube_nxn.h"
+#include "cube_nxn/reduction_general.h"
 
+#include <array>
 #include <cassert>
 #include <cctype>
 #include <cstdlib>
@@ -713,6 +715,25 @@ constexpr EdgeSlot N4_EDGES[12] = {
     { {{Face::L, 1, 3}, {Face::F, 1, 0}}, {{Face::L, 2, 3}, {Face::F, 2, 0}}, Face::L, Face::F },
 };
 
+std::array<EdgeSlot, 12> make_edge_slots(int n) {
+    const int t1 = 1;
+    const int t2 = n - 2;
+    return {{
+        { {{Face::U, n-1, t1}, {Face::F, 0, t1}}, {{Face::U, n-1, t2}, {Face::F, 0, t2}}, Face::U, Face::F },
+        { {{Face::U, n-1-t1, n-1}, {Face::R, 0, t1}}, {{Face::U, n-1-t2, n-1}, {Face::R, 0, t2}}, Face::U, Face::R },
+        { {{Face::U, 0, n-1-t1}, {Face::B, 0, t1}}, {{Face::U, 0, n-1-t2}, {Face::B, 0, t2}}, Face::U, Face::B },
+        { {{Face::U, t1, 0}, {Face::L, 0, t1}}, {{Face::U, t2, 0}, {Face::L, 0, t2}}, Face::U, Face::L },
+        { {{Face::D, 0, t1}, {Face::F, n-1, t1}}, {{Face::D, 0, t2}, {Face::F, n-1, t2}}, Face::D, Face::F },
+        { {{Face::D, t1, n-1}, {Face::R, n-1, n == 4 ? n-1-t1 : t1}}, {{Face::D, t2, n-1}, {Face::R, n-1, n == 4 ? n-1-t2 : t2}}, Face::D, Face::R },
+        { {{Face::D, n-1, n-1-t1}, {Face::B, n-1, t1}}, {{Face::D, n-1, n-1-t2}, {Face::B, n-1, t2}}, Face::D, Face::B },
+        { {{Face::D, n-1-t1, 0}, {Face::L, n-1, n == 4 ? n-1-t1 : t1}}, {{Face::D, n-1-t2, 0}, {Face::L, n-1, n == 4 ? n-1-t2 : t2}}, Face::D, Face::L },
+        { {{Face::F, t1, n-1}, {Face::R, t1, 0}}, {{Face::F, t2, n-1}, {Face::R, t2, 0}}, Face::F, Face::R },
+        { {{Face::R, t1, n-1}, {Face::B, t1, 0}}, {{Face::R, t2, n-1}, {Face::B, t2, 0}}, Face::R, Face::B },
+        { {{Face::B, t1, n-1}, {Face::L, t1, 0}}, {{Face::B, t2, n-1}, {Face::L, t2, 0}}, Face::B, Face::L },
+        { {{Face::L, t1, n-1}, {Face::F, t1, 0}}, {{Face::L, t2, n-1}, {Face::F, t2, 0}}, Face::L, Face::F },
+    }};
+}
+
 bool edge_slot_paired(const NxNCube& cube, const EdgeSlot& e) {
     const uint8_t a1 = cube.sticker(static_cast<int>(e.w1.a.face), e.w1.a.row, e.w1.a.col);
     const uint8_t b1 = cube.sticker(static_cast<int>(e.w1.b.face), e.w1.b.row, e.w1.b.col);
@@ -847,23 +868,28 @@ struct Corner3x3 {
     Sticker     s[3];            // sticker positions in canonical order (primary first)
 };
 
-constexpr Corner3x3 CORNERS_3x3[8] = {
-    {"UFR", 0, 2, 1, {{Face::U, 3, 3}, {Face::F, 0, 3}, {Face::R, 0, 0}}},
-    {"URB", 0, 1, 5, {{Face::U, 0, 3}, {Face::R, 0, 3}, {Face::B, 0, 0}}},
-    {"UBL", 0, 5, 4, {{Face::U, 0, 0}, {Face::B, 0, 3}, {Face::L, 0, 0}}},
-    {"ULF", 0, 4, 2, {{Face::U, 3, 0}, {Face::L, 0, 3}, {Face::F, 0, 0}}},
-    {"DRF", 3, 1, 2, {{Face::D, 0, 3}, {Face::R, 3, 0}, {Face::F, 3, 3}}},
-    {"DBR", 3, 5, 1, {{Face::D, 3, 3}, {Face::B, 3, 0}, {Face::R, 3, 3}}},
-    {"DLB", 3, 4, 5, {{Face::D, 3, 0}, {Face::L, 3, 0}, {Face::B, 3, 3}}},
-    {"DFL", 3, 2, 4, {{Face::D, 0, 0}, {Face::F, 3, 0}, {Face::L, 3, 3}}},
-};
+std::array<Corner3x3, 8> make_corner_slots(int n) {
+    const int m = n - 1;
+    return {{
+        {"UFR", 0, 2, 1, {{Face::U, m, m}, {Face::F, 0, m}, {Face::R, 0, 0}}},
+        {"URB", 0, 1, 5, {{Face::U, 0, m}, {Face::R, 0, m}, {Face::B, 0, 0}}},
+        {"UBL", 0, 5, 4, {{Face::U, 0, 0}, {Face::B, 0, m}, {Face::L, 0, 0}}},
+        {"ULF", 0, 4, 2, {{Face::U, m, 0}, {Face::L, 0, m}, {Face::F, 0, 0}}},
+        {"DRF", 3, 1, 2, {{Face::D, 0, m}, {Face::R, m, 0}, {Face::F, m, m}}},
+        {"DBR", 3, 5, 1, {{Face::D, m, m}, {Face::B, m, 0}, {Face::R, m, m}}},
+        {"DLB", 3, 4, 5, {{Face::D, m, 0}, {Face::L, m, 0}, {Face::B, m, m}}},
+        {"DFL", 3, 2, 4, {{Face::D, 0, 0}, {Face::F, m, 0}, {Face::L, m, m}}},
+    }};
+}
 
 inline bool same_color_pair(uint8_t a1, uint8_t b1, uint8_t a2, uint8_t b2) {
     return (a1 == a2 && b1 == b2) || (a1 == b2 && b1 == a2);
 }
 
-bool identify_edge_at_slot(const NxNCube& cube, int slot_idx, int& home_idx, int& orient) {
-    const EdgeSlot& slot = N4_EDGES[slot_idx];
+bool identify_edge_at_slot(const NxNCube& cube,
+                           const std::array<EdgeSlot, 12>& edge_slots,
+                           int slot_idx, int& home_idx, int& orient) {
+    const EdgeSlot& slot = edge_slots[slot_idx];
     const uint8_t ca = cube.sticker(static_cast<int>(slot.w1.a.face),
                                      slot.w1.a.row, slot.w1.a.col);
     const uint8_t cb = cube.sticker(static_cast<int>(slot.w1.b.face),
@@ -881,15 +907,21 @@ bool identify_edge_at_slot(const NxNCube& cube, int slot_idx, int& home_idx, int
     return false;
 }
 
-bool identify_corner_at_slot(const NxNCube& cube, int slot_idx, int& home_idx, int& orient) {
-    const Corner3x3& slot = CORNERS_3x3[slot_idx];
+bool identify_corner_at_slot(const NxNCube& cube,
+                             const std::array<Corner3x3, 8>& corner_slots,
+                             int slot_idx, int& home_idx, int& orient) {
+    const Corner3x3& slot = corner_slots[slot_idx];
     uint8_t cols[3];
     for (int k = 0; k < 3; ++k) {
         cols[k] = cube.sticker(static_cast<int>(slot.s[k].face),
                                 slot.s[k].row, slot.s[k].col);
     }
     for (int i = 0; i < 8; ++i) {
-        const uint8_t h[3] = {CORNERS_3x3[i].color_primary, CORNERS_3x3[i].color_b, CORNERS_3x3[i].color_c};
+        const uint8_t h[3] = {
+            corner_slots[i].color_primary,
+            corner_slots[i].color_b,
+            corner_slots[i].color_c,
+        };
         int match = 0;
         bool used[3] = {false, false, false};
         for (int t = 0; t < 3; ++t) {
@@ -904,7 +936,7 @@ bool identify_corner_at_slot(const NxNCube& cube, int slot_idx, int& home_idx, i
         if (match == 3) {
             home_idx = i;
             for (int k = 0; k < 3; ++k) {
-                if (cols[k] == CORNERS_3x3[i].color_primary) {
+                if (cols[k] == corner_slots[i].color_primary) {
                     orient = k;
                     return true;
                 }
@@ -944,13 +976,17 @@ struct Analysis {
 };
 
 bool analyze_3x3_state(const NxNCube& cube, Analysis& out) {
+    const auto edge_slots = make_edge_slots(cube.n());
+    const auto corner_slots = make_corner_slots(cube.n());
     for (int i = 0; i < 12; ++i) {
-        if (!identify_edge_at_slot(cube, i, out.edge_perm[i], out.edge_orient[i])) {
+        if (!identify_edge_at_slot(cube, edge_slots, i,
+                                   out.edge_perm[i], out.edge_orient[i])) {
             return false;
         }
     }
     for (int i = 0; i < 8; ++i) {
-        if (!identify_corner_at_slot(cube, i, out.corner_perm[i], out.corner_orient[i])) {
+        if (!identify_corner_at_slot(cube, corner_slots, i,
+                                     out.corner_perm[i], out.corner_orient[i])) {
             return false;
         }
     }
@@ -1027,9 +1063,12 @@ constexpr int N4_EDGE_ORIENT_FLIP[12] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1};
 }
 
 std::optional<cube::CubeState> to_cube_state_3x3(const NxNCube& cube) {
-    assert(cube.n() == 4 && "to_cube_state_3x3 currently supports N=4 only");
     Analysis a;
     if (!analyze_3x3_state(cube, a)) return std::nullopt;
+    if (a.edge_orient_sum != 0 || a.corner_orient_sum != 0 ||
+        a.edge_perm_sign != a.corner_perm_sign) {
+        return std::nullopt;
+    }
 
     cube::CubeState c{};
     for (int i = 0; i < 12; ++i) {
@@ -1085,30 +1124,53 @@ int flatten_into(std::vector<Move>& dst, const std::vector<MoveStep>& stages) {
 }
 
 SolveResult solve_nxn(NxNCube& cube) {
-    assert(cube.n() == 4 && "solve_nxn currently supports N=4 only");
+    const int n = cube.n();
+    assert(n >= 3 && n <= 7);
 
+    const NxNCube original = cube;
     SolveResult result{};
     std::vector<Move> raw;
+    auto finalize = [&]() -> SolveResult {
+        result.moves = collapse_redundant_moves(raw);
+        NxNCube replay = original;
+        for (const auto& move : result.moves) apply_move(replay, move);
+        if (!replay.is_solved()) {
+            result.moves.clear();
+            result.ok = false;
+            return result;
+        }
+        result.ok = true;
+        return result;
+    };
 
-    const auto centers = solve_centers_n4(cube);
+    if (n == 3) {
+        const auto kociemba = finish_as_3x3(cube);
+        if (!cube.is_solved()) return result;
+        raw.insert(raw.end(), kociemba.begin(), kociemba.end());
+        result.stage_lengths.kociemba = static_cast<int>(kociemba.size());
+        return finalize();
+    }
+
+    const auto centers = solve_centers_general(cube);
     result.stage_lengths.centers = flatten_into(raw, centers);
+    if (!centers_reduced_general(cube)) return result;
 
-    const auto edges = solve_edges_n4_algo(cube);
-    if (edges.edges_paired != 12) return result;
-    result.stage_lengths.edges = flatten_into(raw, edges.sequence);
-
-    const auto parity = fix_parity_n4(cube);
-    result.stage_lengths.parity = flatten_into(raw, parity);
-    if (detect_parity_n4(cube) != ParityState::Valid) return result;
+    const auto edges = solve_edges_general(cube);
+    result.stage_lengths.edges = flatten_into(raw, edges);
+    if (!centers_reduced_general(cube) || !wings_reduced_general(cube)) {
+        return result;
+    }
+    if (detect_parity_general(cube) != ParityState::Valid) return result;
 
     const auto kociemba = finish_as_3x3(cube);
-    if (!cube.is_solved()) return result;
-    for (const auto& m : kociemba) raw.push_back(m);
     result.stage_lengths.kociemba = static_cast<int>(kociemba.size());
+    raw.insert(raw.end(), kociemba.begin(), kociemba.end());
 
-    result.moves = collapse_redundant_moves(raw);
-    result.ok = true;
-    return result;
+    const auto middles = solve_middles_after_kociemba(cube);
+    result.stage_lengths.edges += flatten_into(raw, middles);
+
+    if (!cube.is_solved()) return result;
+    return finalize();
 }
 
 }

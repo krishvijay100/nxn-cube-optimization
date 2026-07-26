@@ -1135,3 +1135,42 @@ TEST(SolveNxN, SolvedInputProducesNoOp) {
     EXPECT_TRUE(cube.is_solved());
     EXPECT_TRUE(r.moves.empty()) << "solved cube should produce empty solution";
 }
+
+TEST(SolveNxN, GeneralNEndToEndReplayMatrix) {
+    for (int n = 3; n <= 7; ++n) {
+        for (uint64_t seed = 1; seed <= 5; ++seed) {
+            NxNCube cube(n);
+            const auto scramble = random_scramble(n, 40, seed);
+            for (const auto& move : scramble) apply_move(cube, move);
+            const NxNCube original = cube;
+
+            const SolveResult result = solve_nxn(cube);
+            ASSERT_TRUE(result.ok) << "n=" << n << " seed=" << seed;
+            EXPECT_TRUE(cube.is_solved()) << "n=" << n << " seed=" << seed;
+
+            NxNCube replay = original;
+            for (const auto& move : result.moves) apply_move(replay, move);
+            EXPECT_TRUE(replay.is_solved())
+                << "emitted solution failed replay, n=" << n
+                << " seed=" << seed;
+        }
+    }
+}
+
+TEST(SolveNxN, GeneralN4StressReplay) {
+    for (uint64_t seed = 1; seed <= 100; ++seed) {
+        NxNCube cube(4);
+        const auto scramble = random_scramble(4, 40, seed);
+        for (const auto& move : scramble) apply_move(cube, move);
+        const NxNCube original = cube;
+
+        const SolveResult result = solve_nxn(cube);
+        ASSERT_TRUE(result.ok) << "seed=" << seed;
+        EXPECT_TRUE(cube.is_solved()) << "seed=" << seed;
+        EXPECT_EQ(result.stage_lengths.parity, 0) << "seed=" << seed;
+
+        NxNCube replay = original;
+        for (const auto& move : result.moves) apply_move(replay, move);
+        EXPECT_TRUE(replay.is_solved()) << "seed=" << seed;
+    }
+}

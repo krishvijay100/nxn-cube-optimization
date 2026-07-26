@@ -79,6 +79,10 @@ std::optional<std::vector<Move>> parse_scramble(std::string_view s);
 
 std::string format_move(const Move& m);
 
+std::optional<std::string> format_move_virtual_cube_net(const Move& m, int n);
+std::optional<std::string> format_sequence_virtual_cube_net(
+    const std::vector<Move>& moves, int n);
+
 std::vector<Move> random_scramble(int n, int length, uint64_t seed);
 
 // stage of the reduction pipeline being solved; determines the move set the BFS is allowed to explore

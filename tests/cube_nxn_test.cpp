@@ -15,6 +15,8 @@ using cube_nxn::apply_move;
 using cube_nxn::parse_move;
 using cube_nxn::parse_scramble;
 using cube_nxn::format_move;
+using cube_nxn::format_move_virtual_cube_net;
+using cube_nxn::format_sequence_virtual_cube_net;
 using cube_nxn::random_scramble;
 using cube_nxn::Stage;
 using cube_nxn::MoveStep;
@@ -433,6 +435,36 @@ TEST(ParseMove, RoundTripsCanonicalForms) {
         ASSERT_TRUE(m.has_value()) << "failed to parse: " << s;
         EXPECT_EQ(format_move(*m), s) << "round-trip mismatch for: " << s;
     }
+}
+
+TEST(VirtualCubeNetNotation, FormatsSupportedNxNMoves) {
+    struct Example { int n; const char* engine; const char* expected; };
+    const Example examples[] = {
+        {5, "R", "R"}, {5, "R'", "R'"}, {5, "R2", "R2"},
+        {5, "Rw", "Rw"}, {5, "Fw2", "Fw2"},
+        {5, "2R", "r"}, {5, "2L'", "l'"}, {5, "2U2", "u2"},
+        {5, "3R", "M'"}, {5, "3L", "M"},
+        {5, "3U", "E'"}, {5, "3D", "E"},
+        {5, "3F", "S"}, {5, "3B", "S'"},
+        {5, "4R", "l'"}, {4, "3R", "l'"},
+    };
+    for (const auto& example : examples) {
+        const auto move = parse_move(example.engine);
+        ASSERT_TRUE(move) << example.engine;
+        const auto formatted = format_move_virtual_cube_net(*move, example.n);
+        ASSERT_TRUE(formatted) << example.engine;
+        EXPECT_EQ(*formatted, example.expected) << example.engine;
+    }
+
+    std::vector<Move> sequence;
+    for (const char* token : {"R", "2F'", "3U2", "Rw"}) {
+        const auto move = parse_move(token);
+        ASSERT_TRUE(move);
+        sequence.push_back(*move);
+    }
+    EXPECT_EQ(format_sequence_virtual_cube_net(sequence, 5),
+              std::optional<std::string>("R f' E2 Rw"));
+    EXPECT_FALSE(format_move_virtual_cube_net(*parse_move("3Rw"), 5));
 }
 
 TEST(ParseMove, BareWideEqualsTwoLayerWide) {

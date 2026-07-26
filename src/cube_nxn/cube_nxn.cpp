@@ -338,6 +338,85 @@ std::string format_move(const Move& m) {
     return out;
 }
 
+std::optional<std::string> format_move_virtual_cube_net(const Move& m, int n) {
+    if (n < 3 || n > 5 || m.outer_depth < 0 ||
+        m.outer_depth > m.inner_depth || m.inner_depth >= n) {
+        return std::nullopt;
+    }
+
+    auto opposite = [](Face face) {
+        switch (face) {
+            case Face::U: return Face::D;
+            case Face::R: return Face::L;
+            case Face::F: return Face::B;
+            case Face::D: return Face::U;
+            case Face::L: return Face::R;
+            case Face::B: return Face::F;
+        }
+        return face;
+    };
+    auto invert = [](Turn turn) {
+        if (turn == Turn::CW) return Turn::CCW;
+        if (turn == Turn::CCW) return Turn::CW;
+        return Turn::Half;
+    };
+    auto suffix = [](Turn turn) -> std::string_view {
+        if (turn == Turn::CCW) return "'";
+        if (turn == Turn::Half) return "2";
+        return "";
+    };
+
+    char symbol = '?';
+    bool wide = false;
+    Turn turn = m.turn;
+    if (m.outer_depth == 0 && m.inner_depth == 0) {
+        symbol = face_char(m.face);
+    } else if (m.outer_depth == 0 && m.inner_depth == 1) {
+        symbol = face_char(m.face);
+        wide = true;
+    } else if (m.outer_depth == m.inner_depth && m.outer_depth > 0) {
+        const int depth = m.outer_depth;
+        if (n % 2 == 1 && depth == n / 2) {
+            switch (m.face) {
+                case Face::L: symbol = 'M'; break;
+                case Face::R: symbol = 'M'; turn = invert(turn); break;
+                case Face::D: symbol = 'E'; break;
+                case Face::U: symbol = 'E'; turn = invert(turn); break;
+                case Face::F: symbol = 'S'; break;
+                case Face::B: symbol = 'S'; turn = invert(turn); break;
+            }
+        } else if (depth == 1) {
+            symbol = static_cast<char>(std::tolower(
+                static_cast<unsigned char>(face_char(m.face))));
+        } else if (depth == n - 2) {
+            symbol = static_cast<char>(std::tolower(
+                static_cast<unsigned char>(face_char(opposite(m.face)))));
+            turn = invert(turn);
+        } else {
+            return std::nullopt;
+        }
+    } else {
+        return std::nullopt;
+    }
+
+    std::string out(1, symbol);
+    if (wide) out += 'w';
+    out += suffix(turn);
+    return out;
+}
+
+std::optional<std::string> format_sequence_virtual_cube_net(
+    const std::vector<Move>& moves, int n) {
+    std::string out;
+    for (const Move& move : moves) {
+        const auto formatted = format_move_virtual_cube_net(move, n);
+        if (!formatted) return std::nullopt;
+        if (!out.empty()) out += ' ';
+        out += *formatted;
+    }
+    return out;
+}
+
 namespace {
 
 // splitmix64: tiny stateless PRNG

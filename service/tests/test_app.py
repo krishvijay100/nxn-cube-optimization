@@ -22,6 +22,7 @@ def test_solve_roundtrip_deterministic_scrambles():
         r = client.post("/solve", json={"scramble": scramble})
         assert r.status_code == 200, r.text
         body = r.json()
+        assert body["n"] == 3
         assert body["num_moves"] == len(body["solution"])
         assert nc.verify(scramble, body["solution"]), (
             f"solution didn't solve scramble (seed={seed})"
@@ -31,7 +32,7 @@ def test_solve_roundtrip_deterministic_scrambles():
 def test_solve_solved_cube_returns_empty_solution():
     r = client.post("/solve", json={"scramble": []})
     assert r.status_code == 200
-    assert r.json() == {"solution": [], "num_moves": 0}
+    assert r.json() == {"n": 3, "solution": [], "num_moves": 0}
 
 
 def test_solve_rejects_invalid_move_token():
@@ -54,6 +55,7 @@ def test_scramble_returns_valid_moves():
     r = client.get("/scramble?length=20")
     assert r.status_code == 200
     body = r.json()
+    assert body["n"] == 3
     assert len(body["scramble"]) == 20
     # feed the returned scramble straight to /solve to prove it round-trips
     r2 = client.post("/solve", json={"scramble": body["scramble"]})
@@ -64,3 +66,39 @@ def test_scramble_returns_valid_moves():
 def test_scramble_rejects_bad_length():
     assert client.get("/scramble?length=0").status_code == 422
     assert client.get("/scramble?length=41").status_code == 422
+
+
+def test_roundtrip_every_supported_cube_size():
+    for n in range(3, 8):
+        scramble_response = client.get(f"/scramble?n={n}&length=20")
+        assert scramble_response.status_code == 200
+        scramble = scramble_response.json()["scramble"]
+
+        solve_response = client.post(
+            "/solve",
+            json={"n": n, "scramble": scramble},
+        )
+        assert solve_response.status_code == 200, solve_response.text
+        solution = solve_response.json()["solution"]
+        assert nc.verify(scramble, solution, n)
+
+
+def test_rejects_unsupported_cube_size():
+    assert client.get("/scramble?n=8").status_code == 422
+    assert client.post("/solve", json={"n": 2, "scramble": []}).status_code == 422
+
+
+def test_rejects_move_deeper_than_selected_cube():
+    response = client.post("/solve", json={"n": 5, "scramble": ["6Rw"]})
+    assert response.status_code == 422
+    response = client.post("/solve", json={"n": 5, "scramble": ["5R"]})
+    assert response.status_code == 422
+
+
+def test_rejects_fixed_center_moves_on_odd_cubes():
+    for n, move in ((3, "2L"), (5, "3L"), (7, "4F'")):
+        response = client.post(
+            "/solve",
+            json={"n": n, "scramble": ["U2", move, "R"]},
+        )
+        assert response.status_code == 422

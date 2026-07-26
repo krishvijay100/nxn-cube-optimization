@@ -1,5 +1,5 @@
 pybind11_add_module(nxn_cube_py nxn_cube_py.cpp)
-target_link_libraries(nxn_cube_py PRIVATE cube solver)
+target_link_libraries(nxn_cube_py PRIVATE cube_nxn)
 
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 

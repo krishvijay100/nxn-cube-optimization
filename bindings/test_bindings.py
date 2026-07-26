@@ -16,6 +16,15 @@ class RoundTrip(unittest.TestCase):
             )
             self.assertLess(len(solution), 30, f"seed={seed}: unusually long solution")
 
+    def test_solves_every_supported_cube_size(self):
+        for n in range(3, 8):
+            scramble = nc.random_scramble(20, seed=100 + n, n=n)
+            solution = nc.solve(scramble, n=n)
+            self.assertTrue(
+                nc.verify(scramble, solution, n=n),
+                f"{n}x{n} solution did not solve the generated scramble",
+            )
+
     def test_same_seed_same_scramble(self):
         a = nc.random_scramble(20, seed=7)
         b = nc.random_scramble(20, seed=7)
@@ -34,6 +43,22 @@ class ErrorPaths(unittest.TestCase):
     def test_negative_length_raises(self):
         with self.assertRaises(ValueError):
             nc.random_scramble(-1, seed=0)
+
+    def test_rejects_unsupported_cube_size(self):
+        with self.assertRaises(ValueError):
+            nc.random_scramble(20, seed=0, n=8)
+
+    def test_rejects_move_deeper_than_cube(self):
+        with self.assertRaises(ValueError):
+            nc.solve(["7Rw"], n=5)
+
+        with self.assertRaises(ValueError):
+            nc.solve(["5R"], n=5)
+
+    def test_rejects_fixed_center_moves_on_odd_cubes(self):
+        for n, move in ((3, "2L"), (5, "3L"), (7, "4F'")):
+            with self.assertRaises(ValueError):
+                nc.solve(["U2", move, "R"], n=n)
 
 
 if __name__ == "__main__":
